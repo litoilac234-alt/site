@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6-dev \
     libzip-dev \
     libxml2-dev \
+    libonig-dev \
     unzip \
     gettext-base \
   && docker-php-ext-configure gd --with-freetype --with-jpeg \
