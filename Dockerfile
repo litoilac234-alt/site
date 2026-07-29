@@ -38,12 +38,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* \
   && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
 
-# PHP-FPM: override the default pool — listen on 127.0.0.1:9000, pass env vars
-RUN sed -i \
-    -e 's|^listen = .*|listen = 127.0.0.1:9000|' \
-    -e 's|^;*clear_env = .*|clear_env = no|' \
-    /usr/local/etc/php-fpm.d/www.conf \
-  && rm -f /usr/local/etc/php-fpm.d/zz-railway.conf /usr/local/etc/php-fpm.d/zz-docker.conf
+# Replace entire PHP-FPM pool config to avoid sed-matching issues
+RUN rm -f /usr/local/etc/php-fpm.d/*.conf \
+  && printf '[www]\n\
+user = www-data\n\
+group = www-data\n\
+listen = 127.0.0.1:9000\n\
+pm = dynamic\n\
+pm.max_children = 10\n\
+pm.start_servers = 2\n\
+pm.min_spare_servers = 1\n\
+pm.max_spare_servers = 4\n\
+clear_env = no\n\
+catch_workers_output = yes\n\
+decorate_workers_output = no\n\
+access.log = /proc/self/fd/2\n\
+' > /usr/local/etc/php-fpm.d/www.conf \
+  && php-fpm -t
 
 WORKDIR /var/www/html
 
