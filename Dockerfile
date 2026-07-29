@@ -48,18 +48,18 @@ COPY templates ./templates
 COPY database ./database
 COPY img ./img
 COPY --from=vendor /app/vendor ./vendor
-COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN mkdir -p storage/reports \
-  && sed -i 's/\r$//' /entrypoint.sh \
+  && sed -i 's/\r$//' /entrypoint.sh /etc/nginx/nginx.conf.template \
   && chmod +x /entrypoint.sh \
   && chown -R www-data:www-data /var/www/html/storage \
-  && rm -f /etc/nginx/sites-enabled/default \
+  && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* \
   && printf 'listen = 127.0.0.1:9000\n' > /usr/local/etc/php-fpm.d/zz-listen.conf
 
 ENV APP_BASE_PATH=/
 ENV PORT=8080
 
 EXPOSE 8080
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/entrypoint.sh"]

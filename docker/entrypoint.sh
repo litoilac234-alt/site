@@ -5,18 +5,22 @@ mkdir -p /var/www/html/storage/reports /tmp
 chown -R www-data:www-data /var/www/html/storage || true
 
 export PORT="${PORT:-8080}"
-echo "Starting on PORT=${PORT}"
+echo "=== PEO Monitoring starting on port ${PORT} ==="
 
 # PHP-FPM must inherit Railway env vars (MySQL, APP_URL, etc.)
 printf '\nclear_env = no\n' >> /usr/local/etc/php-fpm.d/zz-docker.conf
 
-# Replace nginx config entirely (avoid Debian default :80 site)
-envsubst '${PORT}' < /etc/nginx/templates/default.conf.template \
-  > /etc/nginx/nginx.conf
+# Generate final nginx.conf from template, replacing $PORT
+sed "s/\${PORT}/${PORT}/g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
-# Drop packaged site configs so nothing else binds ports
+# Remove any leftover Debian default sites
 rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
 
-nginx -t
+echo "=== nginx config test ==="
+nginx -t 2>&1
+
+echo "=== Starting PHP-FPM ==="
 php-fpm -D
+
+echo "=== Starting nginx on 0.0.0.0:${PORT} ==="
 exec nginx -g 'daemon off;'
