@@ -38,9 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* \
   && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
 
-# Replace entire PHP-FPM pool config to avoid sed-matching issues
-RUN rm -f /usr/local/etc/php-fpm.d/*.conf \
-  && printf '[www]\n\
+# Keep global docker FPM settings; replace only the pool listen/env config
+RUN rm -f /usr/local/etc/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/zz-docker.conf \
+  && printf '[global]\n\
+error_log = /proc/self/fd/2\n\
+\n\
+[www]\n\
 user = www-data\n\
 group = www-data\n\
 listen = 127.0.0.1:9000\n\
@@ -85,6 +88,7 @@ http {\n\
     gzip_min_length 256;\n\
     server {\n\
         listen 0.0.0.0:__PORT__;\n\
+        listen [::]:__PORT__;\n\
         server_name _;\n\
         root /var/www/html;\n\
         index index.html;\n\

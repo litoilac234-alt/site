@@ -10,23 +10,12 @@ rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
 
 sed "s/__PORT__/${PORT}/g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
-echo "=== nginx config ==="
-nginx -t 2>&1
-
-echo "=== PHP-FPM config files ==="
-ls -la /usr/local/etc/php-fpm.d/
-cat /usr/local/etc/php-fpm.d/www.conf
-
-echo "=== PHP-FPM config test ==="
-php-fpm -t 2>&1
+echo "=== nginx config test (PORT=${PORT}) ==="
+nginx -t
 
 echo "=== Starting PHP-FPM ==="
 php-fpm -D
-sleep 2
-
-echo "=== Verifying PHP-FPM process ==="
-ps aux | grep php-fpm || echo "WARNING: ps not available"
-ls -la /var/www/html/api/health.php || echo "WARNING: health.php not found"
+sleep 1
 
 echo "=== Starting nginx on 0.0.0.0:${PORT} ==="
 exec nginx -g 'daemon off;'
