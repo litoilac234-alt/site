@@ -52,9 +52,11 @@ COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN mkdir -p storage/reports \
+  && sed -i 's/\r$//' /entrypoint.sh \
   && chmod +x /entrypoint.sh \
   && chown -R www-data:www-data /var/www/html/storage \
-  && rm -f /etc/nginx/sites-enabled/default
+  && rm -f /etc/nginx/sites-enabled/default \
+  && printf 'listen = 127.0.0.1:9000\n' > /usr/local/etc/php-fpm.d/zz-listen.conf
 
 ENV APP_BASE_PATH=/
 ENV PORT=8080

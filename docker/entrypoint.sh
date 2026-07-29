@@ -1,18 +1,22 @@
 #!/bin/sh
-set -e
+set -eu
 
-mkdir -p /var/www/html/storage/reports
+mkdir -p /var/www/html/storage/reports /tmp
 chown -R www-data:www-data /var/www/html/storage || true
 
-# Railway injects PORT; default for local docker run
 export PORT="${PORT:-8080}"
+echo "Starting on PORT=${PORT}"
 
-# Let PHP-FPM see Railway/MySQL environment variables
+# PHP-FPM must inherit Railway env vars (MySQL, APP_URL, etc.)
 printf '\nclear_env = no\n' >> /usr/local/etc/php-fpm.d/zz-docker.conf
 
+# Replace nginx config entirely (avoid Debian default :80 site)
 envsubst '${PORT}' < /etc/nginx/templates/default.conf.template \
-  > /etc/nginx/sites-available/default
-ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+  > /etc/nginx/nginx.conf
 
+# Drop packaged site configs so nothing else binds ports
+rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
+
+nginx -t
 php-fpm -D
 exec nginx -g 'daemon off;'
