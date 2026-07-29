@@ -1,0 +1,24 @@
+# XAMPP / Apache — serve the built React app from /site/
+DirectoryIndex dist/index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /site/
+
+  # PHP API, storage, and template files
+  RewriteRule ^api/ - [L]
+  RewriteRule ^storage/ - [L]
+  RewriteRule ^templates/ - [L]
+
+  # Built static assets and logos
+  RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+  RewriteRule ^img/(.*)$ dist/img/$1 [L]
+  RewriteRule ^favicon\.svg$ dist/favicon.svg [L]
+
+  # Existing files (dist, api, database, etc.)
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^ - [L]
+
+  # SPA client-side routes → dist/index.html
+  RewriteRule ^ dist/index.html [L]
+</IfModule>

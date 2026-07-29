@@ -1,0 +1,767 @@
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useSelectedProject } from '../context/SelectedProjectContext';
+import { IarAccomplishmentTable } from '../components/IarAccomplishmentTable';
+import { IarResourceTable } from '../components/IarResourceTable';
+import { IarVariationTable } from '../components/IarVariationTable';
+import { ProjectSelect } from '../components/ProjectSelect';
+import { WorkItemsTable } from '../components/WorkItemsTable';
+import { newIarItem, newManpowerRow, newVariationItem, type IarAccomplishmentItem, type IarManpowerRow, type IarVariationItem } from '../lib/iarItems';
+import { computeStewaSlippage, newWorkItem, type WorkItem } from '../lib/workItems';
+import {
+  approveReport,
+  getReport,
+  previewReport,
+  rejectReport,
+  saveReport,
+  submitReport,
+} from '../lib/swaStewaApi';
+import { trackReportViewed } from '../lib/recentViewed';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { FormField, TextArea, TextInput } from '../components/ui/FormField';
+import { FormSection } from '../components/ui/FormSection';
+import { PageHeader } from '../components/ui/PageHeader';
+import { ReportTypeBadge } from '../components/ui/StatusBadge';
+import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
+import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
+import {
+  canUserEditReportType,
+  reportIsViewOnly,
+  type SwaStewaReportKind,
+} from '../lib/reportPermissions';
+
+type ReportEditorSnapshot = {
+  projectId: string;
+  data: Record<string, string>;
+  lineItems: WorkItem[];
+  iarItems: IarAccomplishmentItem[];
+  variationItems: IarVariationItem[];
+  manpower: IarManpowerRow[];
+  equipment: IarManpowerRow[];
+  activitiesText: string;
+  fieldInstructionsText: string;
+};
+
+function createInitialSnapshot(isContractor: boolean, userName: string): ReportEditorSnapshot {
+  return {
+    projectId: '1',
+    data: {
+      report_date: new Date().toISOString().slice(0, 10),
+      project_name: 'REPAIR OF VICENTE TRINIDAD NATIONAL HIGH SCHOOL GYMNASIUM, IGUIG, CAGAYAN',
+      location: 'Iguig, Cagayan',
+      contract_amount: '2396212.40',
+      contractor: 'TS Construction',
+      submitted_by_name: userName,
+      submitted_by_title: isContractor ? 'Contractor Representative' : 'Engineer II',
+      inspected_by_name: userName,
+      inspected_by_title: isContractor ? 'Contractor Representative' : 'Engineer II',
+      acceptance_status: 'Accepted',
+      noted_by_name: 'KATHLEEN MEI P. BAGASIN',
+      noted_by_title: 'Engineer IV (Chief-Construction Division)',
+      prepared_by_name: userName,
+      prepared_by_title: isContractor ? 'Contractor Representative' : 'Engineer I',
+      checked_by_name: 'KATHLEEN MEI P. BAGASIN',
+      checked_by_title: 'Chief of Construction Division',
+      recommending_name: 'KINGSTON JAMES S. DELA CRUZ',
+      recommending_title: 'Provincial Engineer',
+      approved_by_name: 'GEN. EDGAR B. AGLIPAY (RET.)',
+      approved_by_title: 'Governor',
+      advance_payment: '359431.86',
+      contract_number: 'B011 - 2023',
+      project_title: 'Improvement of Road Network',
+      municipality: 'Tuao',
+      week_covered: '',
+      problems_remarks: '',
+      orig_target: '',
+      rev_target: '',
+      actual_progress: '',
+      variance: '',
+      progress_remarks: 'On-going',
+      contractor_representative: isContractor ? userName : '',
+    },
+    lineItems: [newWorkItem()],
+    iarItems: [newIarItem()],
+    variationItems: [newVariationItem()],
+    manpower: [newManpowerRow()],
+    equipment: [newManpowerRow()],
+    activitiesText: '',
+    fieldInstructionsText: '',
+  };
+}
+
+const STEWA_FIELDS = [
+  { key: 'report_date', label: 'Report date', type: 'date' },
+  { key: 'period_covered', label: 'Period covered', type: 'text' },
+  { key: 'contract_duration', label: 'Contract duration (days)', type: 'number' },
+  { key: 'notice_to_proceed', label: 'Notice to proceed date', type: 'date' },
+  { key: 'expiry_date', label: 'Expiry date', type: 'date' },
+  { key: 'approved_time_extension', label: 'Approved time extension', type: 'number' },
+  { key: 'approved_time_suspension', label: 'Approved time suspension', type: 'text' },
+  { key: 'total_time_extension', label: 'Total time extension', type: 'number' },
+  { key: 'revised_contract_duration', label: 'Revised contract duration', type: 'number' },
+  { key: 'revised_expiry_date', label: 'Revised expiry date', type: 'date' },
+  { key: 'calendar_days_elapsed', label: 'Calendar days elapsed', type: 'number' },
+  { key: 'percent_actual', label: 'Percent actual', type: 'number' },
+  { key: 'percent_planned', label: 'Percent planned', type: 'number' },
+  { key: 'remarks', label: 'Remarks', type: 'textarea' },
+  { key: 'submitted_by_name', label: 'Submitted by (name)', type: 'text' },
+  { key: 'submitted_by_title', label: 'Submitted by (title)', type: 'text' },
+  { key: 'noted_by_name', label: 'Noted by (name)', type: 'text' },
+  { key: 'noted_by_title', label: 'Noted by (title)', type: 'text' },
+] as const;
+
+export function SwaStewaEditorPage() {
+  const { type: typeParam, id: idParam } = useParams<{ type?: string; id?: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { projectId: selectedProjectId, setProjectId: setSelectedProjectId } = useSelectedProject();
+  const initialProjectRef = useRef(selectedProjectId);
+
+  const isContractor = user?.role === 'contractor';
+  const routeType =
+    typeParam === 'SWA' || typeParam === 'STEWA' || typeParam === 'IAR' ? typeParam : null;
+  const [reportType, setReportType] = useState<SwaStewaReportKind>(routeType ?? 'IAR');
+  const [reportId, setReportId] = useState<number | undefined>(idParam ? Number(idParam) : undefined);
+  const {
+    state: editor,
+    set: setEditor,
+    replace: replaceEditor,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoRedo<ReportEditorSnapshot>({
+    ...createInitialSnapshot(isContractor, user?.name ?? ''),
+    projectId: initialProjectRef.current,
+  });
+  const {
+    projectId,
+    data,
+    lineItems,
+    iarItems,
+    variationItems,
+    manpower,
+    equipment,
+    activitiesText,
+    fieldInstructionsText,
+  } = editor;
+  const [status, setStatus] = useState('draft');
+  const [reportNumber, setReportNumber] = useState('');
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [showSubmittedModal, setShowSubmittedModal] = useState(false);
+  const [generateSCurve, setGenerateSCurve] = useState(false);
+  const [generatePdm, setGeneratePdm] = useState(false);
+  const [generateBarChart, setGenerateBarChart] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  useEffect(() => {
+    if (!idParam && isContractor && routeType && routeType !== 'IAR') {
+      navigate('/swa-stewa', { replace: true });
+    }
+  }, [idParam, isContractor, navigate, routeType]);
+
+  useEffect(() => {
+    if (!idParam) return;
+    getReport(idParam)
+      .then((res) => {
+        const r = res.report;
+        setReportType(r.report_type);
+        setReportId(r.id);
+        setStatus(r.status);
+        setReportNumber(r.report_number);
+        trackReportViewed(r.id);
+        const rd = r.report_data as Record<string, unknown>;
+        const scalar: Record<string, string> = {};
+        for (const [k, v] of Object.entries(rd)) {
+          if (v !== null && typeof v !== 'object') scalar[k] = String(v);
+        }
+        const base = createInitialSnapshot(isContractor, user?.name ?? '');
+        const acc = rd.accomplishment_items as Array<Record<string, unknown>> | undefined;
+        const mp = rd.manpower as IarManpowerRow[] | undefined;
+        const vo = rd.variation_items as Array<Record<string, unknown>> | undefined;
+        const eq = rd.equipment as IarManpowerRow[] | undefined;
+        const acts = rd.activities as string[] | undefined;
+        const instr = rd.field_instructions as string[] | undefined;
+        replaceEditor({
+          projectId: String(r.project_id),
+          data: { ...base.data, ...scalar },
+          lineItems: r.line_items?.length ? r.line_items : base.lineItems,
+          iarItems: acc?.length
+            ? acc.map((item, i) => ({
+                id: String(item.id ?? `iar-${i}`),
+                itemNo: String(item.itemNo ?? item.item_no ?? ''),
+                description: String(item.description ?? ''),
+                location: String(item.location ?? ''),
+                physicalQty: (item.physicalQty ?? item.physical_qty ?? '') as number | '',
+                billableQty: (item.billableQty ?? item.billable_qty ?? '') as number | '',
+                unit: String(item.unit ?? ''),
+              }))
+            : base.iarItems,
+          variationItems: vo?.length
+            ? vo.map((item, i) => ({
+                id: String(item.id ?? `vo-${i}`),
+                itemNo: String(item.itemNo ?? item.item_no ?? ''),
+                description: String(item.description ?? ''),
+                quantity: (item.quantity ?? '') as number | '',
+                unit: String(item.unit ?? ''),
+                additive: String(item.additive ?? ''),
+                deductive: String(item.deductive ?? ''),
+                newItem: String(item.newItem ?? item.new_item ?? ''),
+              }))
+            : base.variationItems,
+          manpower: mp?.length
+            ? mp.map((m, i) => ({
+                id: m.id ?? `mp-${i}`,
+                description: String(m.description ?? ''),
+                quantity: (m.quantity ?? '') as number | '',
+              }))
+            : base.manpower,
+          equipment: eq?.length
+            ? eq.map((m, i) => ({
+                id: m.id ?? `eq-${i}`,
+                description: String(m.description ?? ''),
+                quantity: (m.quantity ?? '') as number | '',
+              }))
+            : base.equipment,
+          activitiesText: acts?.length ? acts.join('\n') : '',
+          fieldInstructionsText: instr?.length ? instr.join('\n') : '',
+        });
+      })
+      .catch(() => setError('Could not load report'));
+  }, [idParam, isContractor, replaceEditor, user?.name]);
+
+  const setField = (key: string, value: string) =>
+    setEditor((s) => ({ ...s, data: { ...s.data, [key]: value } }));
+  const setProjectId = (value: string) => {
+    setEditor((s) => ({ ...s, projectId: value }));
+    setSelectedProjectId(value);
+  };
+  const setLineItems = (items: WorkItem[]) => setEditor((s) => ({ ...s, lineItems: items }));
+  const setIarItems = (items: IarAccomplishmentItem[]) => setEditor((s) => ({ ...s, iarItems: items }));
+  const setVariationItems = (items: IarVariationItem[]) =>
+    setEditor((s) => ({ ...s, variationItems: items }));
+  const setManpower = (items: IarManpowerRow[]) => setEditor((s) => ({ ...s, manpower: items }));
+  const setEquipment = (items: IarManpowerRow[]) => setEditor((s) => ({ ...s, equipment: items }));
+  const setActivitiesText = (value: string) => setEditor((s) => ({ ...s, activitiesText: value }));
+  const setFieldInstructionsText = (value: string) =>
+    setEditor((s) => ({ ...s, fieldInstructionsText: value }));
+
+  const payload = () => {
+    const report_data: Record<string, unknown> = {
+      ...data,
+      slippage: computeStewaSlippage(
+        parseFloat(data.percent_actual || '0'),
+        parseFloat(data.percent_planned || '0'),
+      ),
+    };
+    if (reportType === 'IAR') {
+      report_data.accomplishment_items = iarItems.map((item) => ({
+        item_no: item.itemNo,
+        description: item.description,
+        location: item.location,
+        physical_qty: item.physicalQty,
+        billable_qty: item.billableQty,
+        unit: item.unit,
+      }));
+      report_data.variation_items = variationItems.map((item) => ({
+        item_no: item.itemNo,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        additive: item.additive,
+        deductive: item.deductive,
+        new_item: item.newItem,
+      }));
+      report_data.manpower = manpower;
+      report_data.equipment = equipment;
+      report_data.activities = activitiesText.split('\n').map((s) => s.trim()).filter(Boolean);
+      report_data.field_instructions = fieldInstructionsText.split('\n').map((s) => s.trim()).filter(Boolean);
+    }
+    return {
+      id: reportId,
+      report_type: reportType,
+      project_id: Number(projectId),
+      report_data,
+      line_items: reportType === 'SWA' ? lineItems : [],
+      created_by: user?.id && user.id > 0 ? user.id : undefined,
+    };
+  };
+
+  const handleSave = async (e?: FormEvent) => {
+    e?.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const res = await saveReport(payload());
+      setReportId(res.report.id);
+      setReportNumber(res.report.report_number);
+      setStatus(res.report.status);
+      navigate(`/swa-stewa/edit/${res.report.id}`, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await previewReport(payload());
+      setPreviewHtml(res.preview_html);
+      setShowPreview(true);
+      if (!reportId) {
+        setReportId(res.report.id);
+        setReportNumber(res.report.report_number);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      let id = reportId;
+      if (!id) {
+        const res = await saveReport(payload());
+        id = res.report.id;
+        setReportId(id);
+        setReportNumber(res.report.report_number);
+        navigate(`/swa-stewa/edit/${id}`, { replace: true });
+      }
+      await submitReport(id!, user?.id && user.id > 0 ? user.id : 1);
+      setStatus('pending_review');
+      setSuccess('Submitted successfully. Waiting for Engineer II review.');
+      setShowSubmittedModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Submit failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!reportId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const actorId = user?.id && user.id > 0 ? user.id : 1;
+      const gen =
+        user?.role === 'engineer_2'
+          ? { s_curve: generateSCurve, pdm: generatePdm, bar_chart: generateBarChart }
+          : undefined;
+      const res = await approveReport(reportId, actorId, user?.role, gen);
+      setStatus(res.status);
+      if (res.status === 'generated' && res.pdf_url) {
+        window.open(res.pdf_url, '_blank');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Approve failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!reportId) return;
+    const actorId = user?.id && user.id > 0 ? user.id : 1;
+    await rejectReport(reportId, rejectReason, actorId);
+    setStatus('rejected');
+  };
+
+  const statusEditable = !status || status === 'draft' || status === 'rejected';
+  const canEditForm = statusEditable && canUserEditReportType(user?.role, reportType);
+  const isViewOnly = reportIsViewOnly(user?.role, reportType);
+  const canApproveNow =
+    (user?.role === 'engineer_2' && status === 'pending_review') ||
+    (user?.role === 'engineer_3' && status === 'with_engineer_3') ||
+    (user?.role === 'engineer_4' &&
+      (status === 'with_engineer_4' || status === 'with_engineer_3'));
+  const canRequestRevision = user?.role === 'engineer_2' && status === 'pending_review';
+  useUndoRedoKeyboard(undo, redo, canEditForm);
+
+  const renderField = (
+    key: string,
+    label: string,
+    type: 'text' | 'number' | 'date' | 'textarea' = 'text',
+    span2 = false,
+  ) => (
+    <FormField key={key} label={label} className={span2 ? 'sm:col-span-2' : ''}>
+      {type === 'textarea' ? (
+        <TextArea
+          disabled={!canEditForm}
+          rows={3}
+          value={data[key] ?? ''}
+          onChange={(e) => setField(key, e.target.value)}
+        />
+      ) : (
+        <TextInput
+          disabled={!canEditForm}
+          type={type}
+          value={data[key] ?? ''}
+          onChange={(e) => setField(key, e.target.value)}
+        />
+      )}
+    </FormField>
+  );
+
+  return (
+    <main className="app-main flex flex-1 flex-col overflow-y-auto">
+      <PageHeader
+        badge={reportType}
+        title={reportNumber ? `${reportType} — ${reportNumber}` : `New ${reportType} report`}
+        status={status}
+        backTo={user?.role === 'engineer_1' ? '/workflow' : user?.role === 'contractor' ? '/reports' : '/reports'}
+        backLabel={user?.role === 'engineer_1' ? 'My Submissions' : 'Documents'}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEditForm && (
+              <UndoRedoToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
+            )}
+            <ReportTypeBadge type={reportType} />
+          </div>
+        }
+      />
+
+      {isViewOnly && (
+        <div className="mx-auto max-w-4xl px-8">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            View only — you do not have permission to edit this report type. SWA and STEWA are
+            prepared by Engineer I and Engineer II; IAR is prepared by Engineer I and the contractor.
+          </div>
+        </div>
+      )}
+
+      {(status === 'pending_review' || success) && (
+        <div className="mx-auto max-w-4xl px-8 pt-4">
+          <div className="rounded-xl border border-primary/30 bg-primary-light px-4 py-3 text-sm text-primary">
+            <p className="font-semibold">Submitted</p>
+            <p className="mt-0.5">
+              {success ||
+                'This report has been submitted and is waiting for Engineer II review.'}
+              {reportNumber ? ` (${reportNumber})` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <form
+        id="report-editor-form"
+        className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-8 py-8 pb-28"
+        onSubmit={handleSave}
+      >
+        {reportType !== 'IAR' && (
+          <FormSection title="Project information" step={1} description="Link this report to a project and contractor.">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FormField label="Project">
+                <ProjectSelect value={projectId} disabled={!canEditForm} onChange={setProjectId} />
+              </FormField>
+              {(['project_name', 'location', 'contract_amount', 'contractor'] as const).map((key) =>
+                renderField(key, key.replace(/_/g, ' ')),
+              )}
+            </div>
+          </FormSection>
+        )}
+
+        {reportType === 'STEWA' && (
+          <FormSection
+            title="STEWA — Time Elapsed & Work Accomplished"
+            step={2}
+            accent="warning"
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              {STEWA_FIELDS.map((f) =>
+                renderField(f.key, f.label, f.type === 'textarea' ? 'textarea' : f.type, f.type === 'textarea'),
+              )}
+              <FormField label="Slippage (auto)">
+                <TextInput
+                  readOnly
+                  value={computeStewaSlippage(
+                    parseFloat(data.percent_actual || '0'),
+                    parseFloat(data.percent_planned || '0'),
+                  )}
+                  className="bg-surface-muted"
+                />
+              </FormField>
+            </div>
+          </FormSection>
+        )}
+
+        {reportType === 'IAR' && (
+          <>
+            <FormSection
+              title="Report header"
+              step={1}
+              description="Contract and project details for this reporting week."
+            >
+              <div className="grid gap-5 sm:grid-cols-2">
+                {renderField('report_date', 'IAR date (week start)', 'date')}
+                {(
+                  [
+                    ['contract_number', 'Contract No.'],
+                    ['project_title', 'Project title'],
+                    ['municipality', 'Municipality'],
+                    ['week_covered', 'Week covered'],
+                    ['contractor', 'Contractor'],
+                    ['contractor_representative', 'Contractor representative'],
+                  ] as const
+                ).map(([key, label]) => renderField(key, label))}
+              </div>
+            </FormSection>
+            <FormSection title="Accomplishment" step={2} description="Quantity of work completed this week.">
+              <IarAccomplishmentTable items={iarItems} onChange={setIarItems} readOnly={!canEditForm} />
+            </FormSection>
+            <FormSection title="For variation order" step={3} description="Contract changes — additive, deductive, or new items.">
+              <IarVariationTable items={variationItems} onChange={setVariationItems} readOnly={!canEditForm} />
+            </FormSection>
+            <FormSection title="Site activities & remarks" step={4}>
+              <div className="grid gap-5 lg:grid-cols-2">
+                <FormField label="Activities for the week" hint="One activity per line">
+                  <TextArea
+                    disabled={!canEditForm}
+                    rows={5}
+                    value={activitiesText}
+                    onChange={(e) => setActivitiesText(e.target.value)}
+                    placeholder="Preparation of sub-grade&#10;Pouring of concrete..."
+                  />
+                </FormField>
+                <FormField label="Field instructions" hint="One instruction per line">
+                  <TextArea
+                    disabled={!canEditForm}
+                    rows={5}
+                    value={fieldInstructionsText}
+                    onChange={(e) => setFieldInstructionsText(e.target.value)}
+                  />
+                </FormField>
+              </div>
+              <div className="mt-5">
+                {renderField('problems_remarks', 'Problems encountered / remarks', 'textarea', true)}
+              </div>
+            </FormSection>
+            <FormSection title="Manpower & equipment" step={5} description="On-site resources for this reporting week.">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <IarResourceTable
+                  title="Manpower"
+                  items={manpower}
+                  onChange={setManpower}
+                  readOnly={!canEditForm}
+                />
+                <IarResourceTable
+                  title="Equipment"
+                  items={equipment}
+                  onChange={setEquipment}
+                  readOnly={!canEditForm}
+                />
+              </div>
+            </FormSection>
+            <FormSection title="Physical accomplishment %" step={6} accent="warning">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+                {(
+                  [
+                    ['orig_target', 'Orig. target'],
+                    ['rev_target', 'Rev. target'],
+                    ['actual_progress', 'Actual'],
+                    ['variance', 'Variance'],
+                    ['progress_remarks', 'Remarks'],
+                  ] as const
+                ).map(([key, label]) => renderField(key, label))}
+              </div>
+            </FormSection>
+            <FormSection
+              title="Signatures"
+              step={7}
+              description="Auto-filled: Engineer I + Contractor on submit; Engineer II on approve; Engineer III on accept. Engineer IV has no IAR signature."
+            >
+              <div className="grid gap-5 sm:grid-cols-2">
+                {(
+                  [
+                    ['prepared_by_name', 'Prepared by — Engineer I'],
+                    ['checked_by_name', 'Checked by — Engineer II'],
+                    ['noted_by_name', 'Noted by — Engineer III'],
+                    ['contractor_representative', 'Contractor conforme'],
+                  ] as const
+                ).map(([key, label]) => renderField(key, label))}
+              </div>
+            </FormSection>
+          </>
+        )}
+
+        {reportType === 'SWA' && (
+          <FormSection title="SWA — Work accomplishment" step={2}>
+            <FormField label="Advance payment (₱)" className="mb-5 max-w-xs">
+              <TextInput
+                type="number"
+                disabled={!canEditForm}
+                value={data.advance_payment ?? ''}
+                onChange={(e) => setField('advance_payment', e.target.value)}
+              />
+            </FormField>
+            <WorkItemsTable
+              items={lineItems}
+              advancePayment={parseFloat(data.advance_payment || '0')}
+              onChange={setLineItems}
+              readOnly={!canEditForm}
+            />
+          </FormSection>
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        )}
+      </form>
+
+      <div className="sticky bottom-0 border-t border-border/80 bg-card/95 px-8 py-4 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-3">
+          {canEditForm && (
+            <>
+              <button
+                type="submit"
+                form="report-editor-form"
+                disabled={loading}
+                className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-semibold text-text shadow-sm transition hover:bg-surface-muted disabled:opacity-50"
+              >
+                Save draft
+              </button>
+              <Button type="button" variant="ghost" disabled={loading} onClick={handlePreview}>
+                Preview
+              </Button>
+              <Button type="button" variant="primary" disabled={loading} onClick={handleSubmit}>
+                Submit for review
+              </Button>
+            </>
+          )}
+          {!canEditForm && status === 'pending_review' && (
+            <span className="rounded-xl bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary">
+              Submitted — awaiting Engineer II
+            </span>
+          )}
+          {isViewOnly && reportNumber && (status === 'generated' || status === 'approved') && (
+            <ButtonLink to={`/reports/view/${reportNumber}`} variant="secondary">
+              Open official PDF
+            </ButtonLink>
+          )}
+          {canApproveNow && (
+            <>
+              {user?.role === 'engineer_2' && reportType === 'IAR' && (
+                <div className="mr-auto w-full max-w-sm rounded-xl border border-border bg-surface-muted/60 p-3 text-sm">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={generateSCurve && generatePdm && generateBarChart}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setGenerateSCurve(v);
+                        setGeneratePdm(v);
+                        setGenerateBarChart(v);
+                      }}
+                    />
+                    Select All
+                  </label>
+                  <label className="mt-1.5 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={generateSCurve}
+                      onChange={(e) => setGenerateSCurve(e.target.checked)}
+                    />
+                    Generate S-Curve
+                  </label>
+                  <label className="mt-1 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={generatePdm}
+                      onChange={(e) => setGeneratePdm(e.target.checked)}
+                    />
+                    Generate PDM
+                  </label>
+                  <label className="mt-1 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={generateBarChart}
+                      onChange={(e) => setGenerateBarChart(e.target.checked)}
+                    />
+                    Generate Bar Chart
+                  </label>
+                </div>
+              )}
+              <Button type="button" variant="primary" disabled={loading} onClick={handleApprove}>
+                Approve
+              </Button>
+              {canRequestRevision && (
+                <>
+                  <TextInput
+                    placeholder="Rejection reason"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="!mt-0 max-w-xs"
+                  />
+                  <Button type="button" variant="danger" onClick={handleReject}>
+                    Request Revision
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+          {status === 'generated' && reportNumber && (
+            <ButtonLink to={`/reports/view/${reportNumber}`} variant="secondary">
+              Open QR verification page
+            </ButtonLink>
+          )}
+        </div>
+      </div>
+
+      {showSubmittedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-2xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-light text-2xl text-primary">
+              ✓
+            </div>
+            <h3 className="mt-4 text-xl font-bold text-text">Submitted</h3>
+            <p className="mt-2 text-sm text-text-muted">
+              Your {reportType} report
+              {reportNumber ? (
+                <>
+                  {' '}
+                  <span className="font-mono font-semibold text-text">{reportNumber}</span>
+                </>
+              ) : null}{' '}
+              has been submitted successfully and is now waiting for Engineer II review.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button type="button" variant="primary" onClick={() => setShowSubmittedModal(false)}>
+                OK
+              </Button>
+              <ButtonLink to="/workflow" variant="secondary">
+                Go to My Submissions
+              </ButtonLink>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-surface-muted/50 px-5 py-4">
+              <h3 className="font-semibold text-text">Report preview</h3>
+              <Button type="button" variant="ghost" onClick={() => setShowPreview(false)}>
+                Close
+              </Button>
+            </div>
+            <iframe title="Preview" srcDoc={previewHtml} className="min-h-[60vh] flex-1 w-full border-0 bg-white" />
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

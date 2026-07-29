@@ -1,0 +1,143 @@
+import { newIarItem, type IarAccomplishmentItem } from '../lib/iarItems';
+import { fieldInputClass } from './ui/FormField';
+
+interface Props {
+  items: IarAccomplishmentItem[];
+  onChange: (items: IarAccomplishmentItem[]) => void;
+  readOnly?: boolean;
+}
+
+export function IarAccomplishmentTable({ items, onChange, readOnly }: Props) {
+  const inputCls = `${fieldInputClass()} !mt-0 !py-2 text-xs`;
+
+  const update = (id: string, patch: Partial<IarAccomplishmentItem>) => {
+    onChange(items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface/50">
+      <div className="overflow-x-auto">
+        <table className="data-table w-full min-w-[800px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border bg-surface-muted/80">
+              <th className="px-3 py-3 text-left" rowSpan={2}>
+                Item No.
+              </th>
+              <th className="px-3 py-3 text-left" rowSpan={2}>
+                Description
+              </th>
+              <th className="px-3 py-3 text-left" rowSpan={2}>
+                Location / Station
+              </th>
+              <th className="px-3 py-2 text-center" colSpan={2}>
+                Quantity for the week
+              </th>
+              <th className="px-3 py-3 text-left" rowSpan={2}>
+                Unit
+              </th>
+              {!readOnly && <th className="w-10 px-2 py-3" rowSpan={2} />}
+            </tr>
+            <tr className="border-b border-border bg-surface-muted/60">
+              <th className="px-3 py-2 text-right">Physical</th>
+              <th className="px-3 py-2 text-right">Billable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr
+                key={item.id}
+                className={`border-b border-border/40 transition hover:bg-white/60 ${idx % 2 === 1 ? 'bg-white/40' : ''}`}
+              >
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    value={item.itemNo}
+                    onChange={(e) => update(item.id, { itemNo: e.target.value })}
+                    className={`${inputCls} w-20`}
+                    placeholder="105(1)"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    value={item.description}
+                    onChange={(e) => update(item.id, { description: e.target.value })}
+                    className={`${inputCls} min-w-[180px]`}
+                    placeholder="Work description"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    value={item.location}
+                    onChange={(e) => update(item.id, { location: e.target.value })}
+                    className={`${inputCls} w-24`}
+                    placeholder="PCCP"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    type="number"
+                    value={item.physicalQty}
+                    onChange={(e) =>
+                      update(item.id, {
+                        physicalQty: e.target.value === '' ? '' : Number(e.target.value),
+                      })
+                    }
+                    className={`${inputCls} w-20 text-right`}
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    type="number"
+                    value={item.billableQty}
+                    onChange={(e) =>
+                      update(item.id, {
+                        billableQty: e.target.value === '' ? '' : Number(e.target.value),
+                      })
+                    }
+                    className={`${inputCls} w-20 text-right`}
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    disabled={readOnly}
+                    value={item.unit}
+                    onChange={(e) => update(item.id, { unit: e.target.value })}
+                    className={`${inputCls} w-16`}
+                    placeholder="sq.m."
+                  />
+                </td>
+                {!readOnly && (
+                  <td className="px-2 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => onChange(items.filter((i) => i.id !== item.id))}
+                      className="rounded-lg p-1.5 text-text-muted transition hover:bg-red-50 hover:text-red-600"
+                      title="Remove row"
+                    >
+                      ×
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!readOnly && (
+        <div className="border-t border-border bg-surface-muted/40 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => onChange([...items, newIarItem()])}
+            className="rounded-lg border border-dashed border-primary/40 bg-primary-light/50 px-4 py-2 text-xs font-semibold text-primary transition hover:border-primary hover:bg-primary-light"
+          >
+            + Add accomplishment row
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

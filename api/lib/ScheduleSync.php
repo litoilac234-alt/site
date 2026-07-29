@@ -1,0 +1,306 @@
+<?php
+declare(strict_types=1);
+
+namespace Peo;
+
+use PDO;
+
+class ScheduleSync
+{
+    /** @param array<int, array<string, mixed>> $scheduledActivities Activities with es/ef from PdmSchedule */
+    /** @param array<string, int|null> $actualEndByName */
+    public static function barChartFromPdm(array $scheduledActivities, array $actualEndByName = []): array
+    {
+        $tasks = [];
+        $i = 1;
+        foreach ($scheduledActivities as $a) {
+            $es = (int)($a['es'] ?? 0);
+            $ef = (int)($a['ef'] ?? $es + (int)($a['duration'] ?? 1));
+            $name = (string)($a['name'] ?? $a['number'] ?? 'Activity');
+            $tasks[] = [
+                'index' => $i++,
+                'name' => $name,
+                'startDay' => $es + 1,
+                'endDay' => max($es + 1, $ef),
+                'actualEndDay' => $actualEndByName[$name] ?? null,
+            ];
+        }
+        return $tasks;
+    }
+
+    /** @param array<int, array<string, mixed>> $scheduledActivities */
+    /** @param array<string, float|null> $preservedActual keyed by Y-m-d */
+    public static function sCurveFromPdm(
+        array $scheduledActivities,
+        string $startDate,
+        int $projectDuration,
+        array $preservedActual = [],
+    ): array {
+        if ($scheduledActivities === []) {
+            return [];
+        }
+
+        $totalDur = array_sum(array_map(fn($a) => (int)($a['duration'] ?? 0), $scheduledActivities)) ?: 1;
+        $startTs = strtotime($startDate) ?: time();
+        $duration = max(1, $projectDuration);
+        $points = [];
+
+        $startKey = date('Y-m-d', $startTs);
+        $points[$startKey] = [
+            'point_date' => $startKey,
+            'original_plan_pct' => 0.0,
+            'current_plan_pct' => 0.0,
+            'actual_pct' => $preservedActual[$startKey] ?? 0.0,
+            'label' => 'Project start',
+        ];
+
+        $sorted = $scheduledActivities;
+        usort($sorted, static function (array $a, array $b): int {
+            $ef = ((int)($a['ef'] ?? 0)) <=> ((int)($b['ef'] ?? 0));
+            return $ef !== 0 ? $ef : strcmp((string)($a['number'] ?? ''), (string)($b['number'] ?? ''));
+        });
+
+        $done = 0;
+        foreach ($sorted as $a) {
+            $done += (int)($a['duration'] ?? 0);
+            $ef = max(0, (int)($a['ef'] ?? 0));
+            $pct = round(min(100.0, ($done / $totalDur) * 100), 2);
+            $dateKey = date('Y-m-d', strtotime("+{$ef} days", $startTs));
+            $name = (string)($a['name'] ?? $a['number'] ?? 'Activity');
+            $points[$dateKey] = [
+                'point_date' => $dateKey,
+                'original_plan_pct' => $pct,
+                'current_plan_pct' => $pct,
+                'actual_pct' => $preservedActual[$dateKey] ?? null,
+                'label' => trim((string)($a['number'] ?? '') . ' — ' . $name, ' —'),
+            ];
+        }
+
+        $endKey = date('Y-m-d', strtotime("+{$duration} days", $startTs));
+        $points[$endKey] = [
+            'point_date' => $endKey,
+            'original_plan_pct' => 100.0,
+            'current_plan_pct' => 100.0,
+            'actual_pct' => $preservedActual[$endKey] ?? ($points[$endKey]['actual_pct'] ?? null),
+            'label' => 'Project end',
+        ];
+
+        // Merge in any actual-progress dates (e.g. weekly STEWA/IAR entries) that do
+        // not line up with a planned point so they still appear on the S-curve.
+        foreach ($preservedActual as $dateKey => $val) {
+            if ($val === null) {
+                continue;
+            }
+            if (isset($points[$dateKey])) {
+                $points[$dateKey]['actual_pct'] = (float)$val;
+            } else {
+                $points[$dateKey] = [
+                    'point_date' => $dateKey,
+                    'original_plan_pct' => null,
+                    'current_plan_pct' => null,
+                    'actual_pct' => (float)$val,
+                    'label' => 'Actual (report)',
+                ];
+            }
+        }
+
+        $ordered = array_values($points);
+        usort($ordered, static fn(array $a, array $b) => strcmp($a['point_date'], $b['point_date']));
+
+        return $ordered;
+    }
+
+    /**
+     * Actual progress points derived from STEWA and IAR reports for a project,
+     * keyed by Y-m-d date. Later reports on the same date override earlier ones.
+     * This lets the S-curve and bar chart update automatically as weekly reports
+     * are added, without manual data entry.
+     *
+     * @return array<string, float>
+     */
+    public static function actualPointsFromReports(PDO $pdo, int $projectId): array
+    {
+        try {
+            $stmt = $pdo->prepare(
+                "SELECT report_type, report_data, created_at
+                 FROM swa_stewa_reports
+                 WHERE project_id = ? AND report_type IN ('STEWA', 'IAR')
+                 ORDER BY created_at ASC, id ASC"
+            );
+            $stmt->execute([$projectId]);
+            $rows = $stmt->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $data = json_decode((string)($row['report_data'] ?? '{}'), true);
+            if (!is_array($data)) {
+                $data = [];
+            }
+
+            $rawDate = $data['report_date']
+                ?? $data['period_covered']
+                ?? $data['week_covered']
+                ?? $row['created_at'];
+            $ts = strtotime((string)$rawDate);
+            if ($ts === false) {
+                $ts = strtotime((string)$row['created_at']);
+            }
+            if ($ts === false) {
+                continue;
+            }
+
+            $pct = null;
+            if ($row['report_type'] === 'STEWA') {
+                $pct = $data['percent_actual'] ?? null;
+            } else { // IAR
+                $pct = $data['actual_progress'] ?? $data['percent_actual'] ?? null;
+            }
+            if ($pct === null || $pct === '' || !is_numeric($pct)) {
+                continue;
+            }
+
+            $out[date('Y-m-d', $ts)] = round((float)$pct, 2);
+        }
+
+        ksort($out);
+        return $out;
+    }
+
+    /** @param array<int, array<string, mixed>> $scheduledActivities */
+    public static function sCurveActivitiesFromPdm(array $scheduledActivities, string $startDate): array
+    {
+        if ($scheduledActivities === []) {
+            return [];
+        }
+
+        $totalDur = array_sum(array_map(fn($a) => (int)($a['duration'] ?? 0), $scheduledActivities)) ?: 1;
+        $startTs = strtotime($startDate) ?: time();
+        $sorted = $scheduledActivities;
+        usort($sorted, static function (array $a, array $b): int {
+            $ef = ((int)($a['ef'] ?? 0)) <=> ((int)($b['ef'] ?? 0));
+            return $ef !== 0 ? $ef : strcmp((string)($a['number'] ?? ''), (string)($b['number'] ?? ''));
+        });
+
+        $done = 0;
+        $rows = [];
+        foreach ($sorted as $a) {
+            $done += (int)($a['duration'] ?? 0);
+            $ef = max(0, (int)($a['ef'] ?? 0));
+            $es = max(0, (int)($a['es'] ?? 0));
+            $rows[] = [
+                'number' => (string)($a['number'] ?? ''),
+                'name' => (string)($a['name'] ?? ''),
+                'duration' => (int)($a['duration'] ?? 0),
+                'es' => $es,
+                'ef' => $ef,
+                'finish_date' => date('Y-m-d', strtotime("+{$ef} days", $startTs)),
+                'planned_pct' => round(min(100.0, ($done / $totalDur) * 100), 2),
+                'is_critical' => !empty($a['isCritical']),
+            ];
+        }
+
+        return $rows;
+    }
+
+    public static function loadPdmResult(PDO $pdo, int $projectId): array
+    {
+        $acts = $pdo->prepare(
+            'SELECT id, activity_number AS number, activity_name AS name, duration
+             FROM pdm_activities WHERE project_id = ? ORDER BY id'
+        );
+        $acts->execute([$projectId]);
+        $activities = [];
+        foreach ($acts->fetchAll() as $row) {
+            $activities[] = [
+                'id' => (string)$row['id'],
+                'number' => $row['number'],
+                'name' => $row['name'],
+                'duration' => (int)$row['duration'],
+            ];
+        }
+
+        $deps = $pdo->prepare(
+            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS lag
+             FROM pdm_dependencies WHERE project_id = ?'
+        );
+        $deps->execute([$projectId]);
+        $dependencies = [];
+        foreach ($deps->fetchAll() as $row) {
+            $dependencies[] = [
+                'fromId' => (string)$row['fromId'],
+                'toId' => (string)$row['toId'],
+                'type' => $row['type'],
+                'lag' => (int)$row['lag'],
+            ];
+        }
+
+        return self::calculateScheduled($activities, $dependencies);
+    }
+
+    public static function projectStartDate(PDO $pdo, int $projectId): string
+    {
+        $stmt = $pdo->prepare('SELECT start_date FROM projects WHERE id = ?');
+        $stmt->execute([$projectId]);
+        $row = $stmt->fetchColumn();
+        return $row ? (string)$row : date('Y-m-d');
+    }
+
+    /** @return array<string, float|null> */
+    public static function loadPreservedActuals(PDO $pdo, int $projectId): array
+    {
+        $stmt = $pdo->prepare(
+            'SELECT point_date, actual_pct FROM s_curve_points WHERE project_id = ? AND actual_pct IS NOT NULL'
+        );
+        $stmt->execute([$projectId]);
+        $map = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $map[(string)$row['point_date']] = $row['actual_pct'] !== null ? (float)$row['actual_pct'] : null;
+        }
+        return $map;
+    }
+
+    public static function saveSCurvePoints(PDO $pdo, int $projectId, array $points): void
+    {
+        $pdo->prepare('DELETE FROM s_curve_points WHERE project_id = ?')->execute([$projectId]);
+        $ins = $pdo->prepare(
+            'INSERT INTO s_curve_points (project_id, point_date, original_plan_pct, current_plan_pct, actual_pct)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        foreach ($points as $p) {
+            $ins->execute([
+                $projectId,
+                $p['point_date'],
+                $p['original_plan_pct'],
+                $p['current_plan_pct'],
+                $p['actual_pct'],
+            ]);
+        }
+    }
+
+    /** @param array<int, array<string, mixed>> $activities */
+    /** @param array<int, array<string, mixed>> $dependencies */
+    public static function calculateScheduled(array $activities, array $dependencies): array
+    {
+        if ($activities === []) {
+            return ['activities' => [], 'projectDuration' => 0, 'criticalPath' => []];
+        }
+        $pdm = PdmSchedule::calculate($activities, $dependencies);
+        if (isset($pdm['error'])) {
+            return ['activities' => $activities, 'projectDuration' => 0, 'criticalPath' => [], 'error' => $pdm['error']];
+        }
+        return $pdm;
+    }
+
+    public static function syncDerivedViews(PDO $pdo, int $projectId, array $pdmResult, array $actualEndByName = []): void
+    {
+        $scheduled = $pdmResult['activities'] ?? [];
+        $duration = max(1, (int)($pdmResult['projectDuration'] ?? 0));
+        $preserved = self::loadPreservedActuals($pdo, $projectId);
+        $startDate = self::projectStartDate($pdo, $projectId);
+        $points = self::sCurveFromPdm($scheduled, $startDate, $duration, $preserved);
+        self::saveSCurvePoints($pdo, $projectId, $points);
+    }
+}
