@@ -38,9 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* \
   && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
 
-# PHP-FPM: listen on 127.0.0.1:9000, pass env vars through
-RUN printf '[www]\nlisten = 127.0.0.1:9000\nclear_env = no\n' \
-    > /usr/local/etc/php-fpm.d/zz-railway.conf
+# PHP-FPM: override the default pool — listen on 127.0.0.1:9000, pass env vars
+RUN sed -i \
+    -e 's|^listen = .*|listen = 127.0.0.1:9000|' \
+    -e 's|^;*clear_env = .*|clear_env = no|' \
+    /usr/local/etc/php-fpm.d/www.conf \
+  && rm -f /usr/local/etc/php-fpm.d/zz-railway.conf /usr/local/etc/php-fpm.d/zz-docker.conf
 
 WORKDIR /var/www/html
 
@@ -66,6 +69,9 @@ http {\n\
     sendfile on;\n\
     keepalive_timeout 65;\n\
     client_max_body_size 32M;\n\
+    gzip on;\n\
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;\n\
+    gzip_min_length 256;\n\
     server {\n\
         listen 0.0.0.0:__PORT__;\n\
         server_name _;\n\
@@ -84,8 +90,11 @@ http {\n\
     }\n\
 }\n' > /etc/nginx/nginx.conf.template
 
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 ENV APP_BASE_PATH=/
 ENV PORT=8080
 EXPOSE 8080
 
-CMD sh -c "sed \"s/__PORT__/${PORT}/g\" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && echo '=== Starting on port '${PORT}' ===' && nginx -t 2>&1 && php-fpm -D && nginx -g 'daemon off;'"
+ENTRYPOINT ["/entrypoint.sh"]
