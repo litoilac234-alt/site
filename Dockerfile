@@ -16,7 +16,11 @@ RUN npm run build
 FROM composer:2 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+# Platform ext checks (gd, etc.) apply to the final PHP image, not this Composer stage
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
+    --ignore-platform-req=ext-gd \
+    --ignore-platform-req=ext-zip \
+    --ignore-platform-req=ext-mbstring
 
 # --- Runtime: nginx + PHP-FPM ---
 FROM php:8.2-fpm-bookworm
