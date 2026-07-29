@@ -16,7 +16,6 @@ RUN npm run build
 FROM composer:2 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
-# Platform ext checks (gd, etc.) apply to the final PHP image, not this Composer stage
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
     --ignore-platform-req=ext-gd \
     --ignore-platform-req=ext-zip \
@@ -34,32 +33,59 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libonig-dev \
     unzip \
-    gettext-base \
   && docker-php-ext-configure gd --with-freetype --with-jpeg \
   && docker-php-ext-install -j$(nproc) pdo_mysql gd zip mbstring \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*
+
+# PHP-FPM: listen on 127.0.0.1:9000, pass env vars through
+RUN printf '[www]\nlisten = 127.0.0.1:9000\nclear_env = no\n' \
+    > /usr/local/etc/php-fpm.d/zz-railway.conf
 
 WORKDIR /var/www/html
 
-# Built SPA at document root + PHP API beside it
 COPY --from=frontend /app/dist/. ./
 COPY api ./api
 COPY templates ./templates
 COPY database ./database
 COPY img ./img
 COPY --from=vendor /app/vendor ./vendor
-COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
-COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN mkdir -p storage/reports \
-  && sed -i 's/\r$//' /entrypoint.sh /etc/nginx/nginx.conf.template \
-  && chmod +x /entrypoint.sh \
-  && chown -R www-data:www-data /var/www/html/storage \
-  && rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* \
-  && printf 'listen = 127.0.0.1:9000\n' > /usr/local/etc/php-fpm.d/zz-listen.conf
+  && chown -R www-data:www-data /var/www/html/storage
+
+# Bake the nginx config inline (no external file, no CRLF issues)
+RUN printf 'worker_processes auto;\n\
+error_log /dev/stderr warn;\n\
+pid /tmp/nginx.pid;\n\
+events { worker_connections 1024; }\n\
+http {\n\
+    include /etc/nginx/mime.types;\n\
+    default_type application/octet-stream;\n\
+    access_log /dev/stdout;\n\
+    sendfile on;\n\
+    keepalive_timeout 65;\n\
+    client_max_body_size 32M;\n\
+    server {\n\
+        listen 0.0.0.0:__PORT__;\n\
+        server_name _;\n\
+        root /var/www/html;\n\
+        index index.html;\n\
+        location ~ ^/api/(.+\\.php)(/.*)?$ {\n\
+            include fastcgi_params;\n\
+            fastcgi_param SCRIPT_FILENAME $document_root/api/$1;\n\
+            fastcgi_pass 127.0.0.1:9000;\n\
+            fastcgi_read_timeout 120s;\n\
+        }\n\
+        location /storage/ { alias /var/www/html/storage/; try_files $uri =404; }\n\
+        location /templates/ { alias /var/www/html/templates/; try_files $uri =404; }\n\
+        location /img/ { alias /var/www/html/img/; try_files $uri =404; }\n\
+        location / { try_files $uri $uri/ /index.html; }\n\
+    }\n\
+}\n' > /etc/nginx/nginx.conf.template
 
 ENV APP_BASE_PATH=/
 ENV PORT=8080
-
 EXPOSE 8080
-CMD ["/entrypoint.sh"]
+
+CMD sh -c "sed \"s/__PORT__/${PORT}/g\" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && echo '=== Starting on port '${PORT}' ===' && nginx -t 2>&1 && php-fpm -D && nginx -g 'daemon off;'"
