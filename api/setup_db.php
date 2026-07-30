@@ -1,14 +1,20 @@
 <?php
 declare(strict_types=1);
 
-header('Content-Type: text/plain; charset=utf-8');
-header('X-Accel-Buffering: no');
-ini_set('display_errors', '0');
-ini_set('default_socket_timeout', '5');
-while (ob_get_level() > 0) {
-    ob_end_flush();
+/**
+ * Auto DB install for Railway (CLI or browser).
+ * Safe to run on every boot — skips if users table exists.
+ */
+
+$isCli = PHP_SAPI === 'cli';
+
+if (!$isCli) {
+    header('Content-Type: text/plain; charset=utf-8');
+    header('X-Accel-Buffering: no');
 }
-ob_implicit_flush(true);
+
+ini_set('display_errors', '0');
+ini_set('default_socket_timeout', '10');
 
 function env_val(string $key, string $default = ''): string
 {
@@ -22,7 +28,9 @@ function env_val(string $key, string $default = ''): string
 function out(string $line): void
 {
     echo $line . "\n";
-    flush();
+    if (PHP_SAPI !== 'cli') {
+        flush();
+    }
 }
 
 $host = env_val('MYSQLHOST', env_val('DB_HOST', ''));
@@ -31,39 +39,47 @@ $name = env_val('MYSQLDATABASE', env_val('DB_NAME', ''));
 $user = env_val('MYSQLUSER', env_val('DB_USER', ''));
 $pass = env_val('MYSQLPASSWORD', env_val('DB_PASS', ''));
 
-out("Host={$host}");
-out("Port={$port}");
-out("Database={$name}");
-out("User={$user}");
-out('');
+out("DB setup: host={$host} db={$name} user={$user}");
 
 if ($host === '' || $name === '' || $user === '') {
-    http_response_code(500);
-    out('ERROR: MySQL env vars missing. Check site Variables in Railway.');
-    exit;
+    out('SKIP: MySQL env vars missing.');
+    exit($isCli ? 0 : 1);
+}
+
+$pdo = null;
+$lastError = '';
+for ($attempt = 1; $attempt <= 10; $attempt++) {
+    try {
+        $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
+        $pdo = new PDO($dsn, $user, $pass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::MYSQL_ATTR_CONNECT_TIMEOUT => 5,
+        ]);
+        out("Connected (attempt {$attempt}).");
+        break;
+    } catch (Throwable $e) {
+        $lastError = $e->getMessage();
+        out("Waiting for MySQL (attempt {$attempt}/10): {$lastError}");
+        sleep(3);
+    }
+}
+
+if ($pdo === null) {
+    out('ERROR: could not connect to MySQL: ' . $lastError);
+    exit($isCli ? 0 : 1); // don't block boot forever
 }
 
 try {
-    $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
-    $pdo = new PDO($dsn, $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_TIMEOUT => 5,
-        PDO::MYSQL_ATTR_CONNECT_TIMEOUT => 5,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-    out('Connected to MySQL.');
-
     $exists = $pdo->query("SHOW TABLES LIKE 'users'")->fetch();
     if ($exists) {
-        out('OK: tables already exist. Nothing to do.');
-        exit;
+        out('OK: tables already exist.');
+        exit(0);
     }
 
     $sqlFile = dirname(__DIR__) . '/database/install-railway.sql';
     if (!is_readable($sqlFile)) {
-        http_response_code(500);
         out('ERROR: database/install-railway.sql not found.');
-        exit;
+        exit($isCli ? 0 : 1);
     }
 
     $sql = file_get_contents($sqlFile);
@@ -79,9 +95,10 @@ try {
     }
     $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
 
-    out('OK: database installed successfully.');
-    out('Demo login: engineer1@peo.local / demo123');
+    out('OK: database installed.');
+    out('Login: engineer1@peo.local / demo123');
+    exit(0);
 } catch (Throwable $e) {
-    http_response_code(500);
     out('ERROR: ' . $e->getMessage());
+    exit($isCli ? 0 : 1);
 }

@@ -17,5 +17,8 @@ echo "=== Starting PHP-FPM ==="
 php-fpm -D
 sleep 1
 
+echo "=== Auto database setup ==="
+php /var/www/html/api/setup_db.php || echo "DB setup skipped"
+
 echo "=== Starting nginx on 0.0.0.0:${PORT} ==="
 exec nginx -g 'daemon off;'
