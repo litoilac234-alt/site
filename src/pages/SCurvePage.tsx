@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { ProjectSelect } from '../components/ProjectSelect';
+import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { useSelectedProject } from '../context/SelectedProjectContext';
 import { getSCurve, type SCurveActivity } from '../lib/sCurveApi';
 import type { SCurvePoint } from '../types';
@@ -42,6 +43,7 @@ export function SCurvePage() {
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
+      <DocumentsBackLink />
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="inline-block rounded-full bg-primary-light px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">

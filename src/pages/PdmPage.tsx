@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
+import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
 import { DEPENDENCY_LABELS } from '../lib/pdm';
 import { PdmNode } from '../components/PdmNode';
@@ -109,6 +110,7 @@ export function PdmPage() {
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
+      <DocumentsBackLink />
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="inline-block rounded-full bg-primary-light px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
