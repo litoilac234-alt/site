@@ -11,8 +11,8 @@ import {
 
 const REPORT_TYPES: { type: SwaStewaReportKind; label: string; desc: string; color: string }[] = [
   { type: 'IAR', label: 'IAR', desc: 'Inspection & Acceptance Report', color: 'border-teal-200 bg-teal-50/80' },
-  { type: 'STEWA', label: 'STEWA', desc: 'Statement of Time Elapsed & Work Accomplished', color: 'border-amber-200 bg-amber-50/80' },
   { type: 'SWA', label: 'SWA', desc: 'Summary of Work Accomplished', color: 'border-violet-200 bg-violet-50/80' },
+  { type: 'STEWA', label: 'STEWA', desc: 'Statement of Time Elapsed & Work Accomplished', color: 'border-amber-200 bg-amber-50/80' },
 ];
 
 const SCHEDULE_DOC_LINKS = [
@@ -44,6 +44,7 @@ export function ReportsPage() {
 
   const [reports, setReports] = useState<SwaStewaReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openFolder, setOpenFolder] = useState<SwaStewaReportKind | null>(null);
 
   useEffect(() => {
     listReports()
@@ -55,6 +56,13 @@ export function ReportsPage() {
   const visible = isReviewer
     ? reports.filter((r) => r.status === 'generated')
     : reports;
+
+  const folders = REPORT_TYPES.map((rt) => ({
+    ...rt,
+    items: visible.filter((r) => r.report_type === rt.type),
+  }));
+
+  const openFolderMeta = folders.find((f) => f.type === openFolder) ?? null;
 
   const canEditReport = (rpt: SwaStewaReport) =>
     (rpt.status === 'draft' || rpt.status === 'rejected') &&
@@ -193,20 +201,71 @@ export function ReportsPage() {
         </div>
       )}
 
-      <h2 id="stored-reports" className="mb-4 scroll-mt-6 text-lg font-semibold text-text">
-        {isReviewer ? 'Stored reports' : 'Stored Reports'}
-      </h2>
+      <div id="stored-reports" className="mb-4 scroll-mt-6 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-text">
+          {isReviewer ? 'Stored reports' : 'Stored Reports'}
+        </h2>
+        {openFolderMeta && (
+          <button
+            type="button"
+            onClick={() => setOpenFolder(null)}
+            className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-text hover:bg-surface-muted"
+          >
+            ← All folders
+          </button>
+        )}
+      </div>
+
       {loading ? (
         <p className="text-sm text-text-muted">Loading reports from database…</p>
-      ) : visible.length === 0 ? (
-        <p className="text-sm text-text-muted">
-          {isReviewer
-            ? 'No finalized reports yet. Reports appear here only after Engineer IV approval.'
-            : 'No reports found.'}
-        </p>
+      ) : !openFolderMeta ? (
+        <div className="grid gap-4 sm:grid-cols-3">
+          {folders.map((folder) => (
+            <button
+              key={folder.type}
+              type="button"
+              onClick={() => setOpenFolder(folder.type)}
+              className={`rounded-2xl border p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${folder.color}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-text-muted">Folder</p>
+                  <p className="mt-1 text-xl font-bold text-text">{folder.label}</p>
+                  <p className="mt-1 text-sm text-text-muted">{folder.desc}</p>
+                </div>
+                <span
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/80 text-sm font-bold text-text"
+                  aria-hidden
+                >
+                  {folder.label.slice(0, 1)}
+                </span>
+              </div>
+              <p className="mt-4 text-sm font-semibold text-text">
+                {folder.items.length} {folder.items.length === 1 ? 'report' : 'reports'}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-primary">Open folder →</p>
+            </button>
+          ))}
+        </div>
+      ) : openFolderMeta.items.length === 0 ? (
+        <div className={`rounded-2xl border p-6 ${openFolderMeta.color}`}>
+          <p className="font-bold text-text">{openFolderMeta.label} folder</p>
+          <p className="mt-2 text-sm text-text-muted">
+            {isReviewer
+              ? `No finalized ${openFolderMeta.label} reports yet.`
+              : `No ${openFolderMeta.label} reports in this folder yet.`}
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {visible.map((rpt) => (
+          <div className={`rounded-2xl border px-5 py-3 ${openFolderMeta.color}`}>
+            <p className="text-sm font-bold text-text">
+              {openFolderMeta.label} · {openFolderMeta.items.length}{' '}
+              {openFolderMeta.items.length === 1 ? 'report' : 'reports'}
+            </p>
+            <p className="text-xs text-text-muted">{openFolderMeta.desc}</p>
+          </div>
+          {openFolderMeta.items.map((rpt) => (
             <div
               key={rpt.id}
               className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm"
