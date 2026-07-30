@@ -5,46 +5,18 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
-import { PdmNode, PDM_NODE_H, PDM_NODE_W } from '../components/PdmNode';
+import { DEPENDENCY_LABELS } from '../lib/pdm';
+import { PdmNode } from '../components/PdmNode';
 import type { PdmActivity, PdmDependency } from '../types';
 
-const NODE_HALF_W = PDM_NODE_W / 2;
-const NODE_HALF_H = PDM_NODE_H / 2;
-
-function totalFloatOf(a: PdmActivity): number {
-  if (a.ls == null || a.es == null) return 0;
-  return Math.max(0, a.ls - a.es);
-}
-
-/** Free float for FS links: earliest successor ES − this EF (lag-adjusted). */
-function freeFloatOf(a: PdmActivity, activities: PdmActivity[], deps: PdmDependency[]): number {
-  const tf = totalFloatOf(a);
-  const successors = deps.filter((d) => d.fromId === a.id);
-  if (successors.length === 0 || a.ef == null) return tf;
-
-  let minAvail = Infinity;
-  for (const dep of successors) {
-    const succ = activities.find((x) => x.id === dep.toId);
-    if (!succ || succ.es == null) continue;
-    const lag = dep.lag ?? 0;
-    const type = dep.type ?? 'FS';
-    if (type === 'FS') {
-      minAvail = Math.min(minAvail, succ.es - lag);
-    } else if (type === 'SS') {
-      minAvail = Math.min(minAvail, succ.es - lag + (a.es ?? 0) - (a.ef ?? 0));
-    } else {
-      return tf;
-    }
-  }
-  if (!Number.isFinite(minAvail)) return tf;
-  return Math.max(0, minAvail - a.ef);
-}
+const NODE_HALF_W = 60;
+const NODE_HALF_H = 45;
 
 function nodePosition(act: PdmActivity, index: number) {
   if (act.posX != null && act.posY != null) {
     return { x: act.posX, y: act.posY };
   }
-  return { x: 140 + (index % 3) * 180, y: 100 + Math.floor(index / 3) * 160 };
+  return { x: 120 + (index % 3) * 160, y: 90 + Math.floor(index / 3) * 150 };
 }
 
 function diagramBounds(positions: Record<string, { x: number; y: number }>) {
@@ -204,10 +176,10 @@ export function PdmPage() {
 
               <defs>
                 <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6" fill="#5b5b5b" />
+                  <path d="M0,0 L6,3 L0,6" fill="#9ca89f" />
                 </marker>
                 <marker id="arrow-critical" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6" fill="#c00000" />
+                  <path d="M0,0 L6,3 L0,6" fill="#c4a574" />
                 </marker>
               </defs>
 
@@ -218,7 +190,7 @@ export function PdmPage() {
                 const isCritical =
                   activities.find((a) => a.id === dep.fromId)?.isCritical &&
                   activities.find((a) => a.id === dep.toId)?.isCritical;
-                const stroke = isCritical ? '#c00000' : '#5b5b5b';
+                const stroke = isCritical ? '#c4a574' : '#9ca89f';
                 const edge = dependencyEdge(from, to);
                 if (edge.curved) {
                   return (
@@ -249,47 +221,20 @@ export function PdmPage() {
               {activities.map((act) => {
                 const pos = positions[act.id];
                 if (!pos) return null;
-                return (
-                  <PdmNode
-                    key={act.id}
-                    activity={act}
-                    x={pos.x}
-                    y={pos.y}
-                    freeFloat={freeFloatOf(act, activities, dependencies)}
-                    totalFloat={totalFloatOf(act)}
-                  />
-                );
+                return <PdmNode key={act.id} activity={act} x={pos.x} y={pos.y} />;
               })}
             </svg>
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-              <h3 className="font-semibold text-text">Node legend (PDM template)</h3>
+              <h3 className="font-semibold text-text">Dependency Types</h3>
               <ul className="mt-3 space-y-2 text-sm text-text-muted">
-                <li>
-                  <span className="inline-block h-3 w-3 rounded-sm bg-[#5b9bd5] align-middle" />{' '}
-                  <strong className="text-text">FF</strong> — Free float = ES(successor) − EF
-                </li>
-                <li>
-                  <span className="inline-block h-3 w-3 rounded-sm border border-border bg-white align-middle" />{' '}
-                  <strong className="text-text">TF</strong> — Total float = LS − ES
-                </li>
-                <li>
-                  <span className="inline-block h-3 w-3 rounded-sm bg-[#ed7d31] align-middle" />{' '}
-                  <strong className="text-text">DUR</strong> — Activity duration
-                </li>
-                <li>
-                  <span className="inline-block h-3 w-3 rounded-sm bg-[#70ad47] align-middle" />{' '}
-                  <strong className="text-text">Name</strong> — Activity name
-                </li>
-                <li>
-                  <strong className="text-text">ES / EF / LS / LF</strong> — Early &amp; late start/finish
-                </li>
-                <li>
-                  <span className="inline-block h-0.5 w-6 bg-[#c00000] align-middle" />{' '}
-                  <strong className="text-text">Red path</strong> — Critical path (TF = 0)
-                </li>
+                {Object.entries(DEPENDENCY_LABELS).map(([key, label]) => (
+                  <li key={key}>
+                    <strong className="text-text">{key}</strong> — {label}
+                  </li>
+                ))}
               </ul>
             </div>
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
@@ -301,8 +246,6 @@ export function PdmPage() {
                     <th className="py-2">No.</th>
                     <th>Activity</th>
                     <th>D</th>
-                    <th>FF</th>
-                    <th>TF</th>
                     <th>ES</th>
                     <th>EF</th>
                     <th>LS</th>
@@ -316,8 +259,6 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
-                      <td>{freeFloatOf(a, activities, dependencies)}</td>
-                      <td>{totalFloatOf(a)}</td>
                       <td>{a.es}</td>
                       <td>{a.ef}</td>
                       <td>{a.ls}</td>
