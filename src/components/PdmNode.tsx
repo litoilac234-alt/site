@@ -60,7 +60,6 @@ export function PdmNode({ activity, x, y, freeFloat = 0, totalFloat = 0 }: PdmNo
   const botH = h - topH - midH;
   const col = w / 3;
 
-  const name = activity.name?.trim() || activity.number;
   const label = `${activity.number}${activity.name && activity.name !== activity.number ? ` — ${activity.name}` : ''}`;
   const displayName = activity.name?.trim() ? activity.name : activity.number;
   const nameFontSize = displayName.length > 22 ? 8 : displayName.length > 12 ? 9 : 10;
