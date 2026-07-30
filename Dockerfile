@@ -53,7 +53,7 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && sed -i 's/\r$//' /entrypoint.sh
 
 ENV APP_BASE_PATH=/
-ENV PORT=8080
+# Do not bake PORT=8080 — Railway must inject PORT at runtime
 EXPOSE 8080
 
 ENTRYPOINT ["/entrypoint.sh"]
