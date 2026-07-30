@@ -43,7 +43,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
     }
 
     $deps = $pdo->prepare(
-        'SELECT id, from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS lag
+        'SELECT id, from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS `lag`
          FROM pdm_dependencies WHERE project_id = ?'
     );
     $deps->execute([$projectId]);
@@ -272,7 +272,7 @@ if ($method === 'POST' && $action === 'save') {
         }
 
         $dbDeps = $pdo->prepare(
-            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS lag
+            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS `lag`
              FROM pdm_dependencies WHERE project_id = ?'
         );
         $dbDeps->execute([$projectId]);

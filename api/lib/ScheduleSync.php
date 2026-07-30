@@ -223,7 +223,7 @@ class ScheduleSync
         }
 
         $deps = $pdo->prepare(
-            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS lag
+            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS `lag`
              FROM pdm_dependencies WHERE project_id = ?'
         );
         $deps->execute([$projectId]);
