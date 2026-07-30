@@ -1,7 +1,7 @@
 import type { PdmActivity } from '../types';
 
-export const PDM_NODE_W = 132;
-export const PDM_NODE_H = 102;
+export const PDM_NODE_W = 136;
+export const PDM_NODE_H = 118;
 
 interface PdmNodeProps {
   activity: PdmActivity;
@@ -56,8 +56,9 @@ export function PdmNode({ activity, x, y, freeFloat = 0, totalFloat = 0 }: PdmNo
   const h = PDM_NODE_H;
   const critical = activity.isCritical;
   const topH = 28;
-  const midH = 30;
-  const botH = h - topH - midH;
+  const midH = 28;
+  const botY = topH + midH;
+  const cellH = (h - botY) / 2;
   const col = w / 3;
 
   const label = `${activity.number}${activity.name && activity.name !== activity.number ? ` — ${activity.name}` : ''}`;
@@ -75,6 +76,10 @@ export function PdmNode({ activity, x, y, freeFloat = 0, totalFloat = 0 }: PdmNo
   const ff = freeFloat;
   const tf = totalFloat;
   const dur = activity.duration;
+
+  /** Label near top of cell, value centered in lower part of cell. */
+  const cellLabelY = (row: 0 | 1) => botY + row * cellH + 9;
+  const cellValueY = (row: 0 | 1) => botY + row * cellH + cellH - 6;
 
   return (
     <g transform={`translate(${x - w / 2}, ${y - h / 2})`}>
@@ -132,41 +137,40 @@ export function PdmNode({ activity, x, y, freeFloat = 0, totalFloat = 0 }: PdmNo
         </text>
       ))}
 
-      {/* Bottom 2×2: ES EF / LS LF */}
-      <line x1={0} y1={topH + midH} x2={w} y2={topH + midH} stroke="#333" strokeWidth={1} />
-      <line x1={w / 2} y1={topH + midH} x2={w / 2} y2={h} stroke="#333" strokeWidth={1} />
-      <line x1={0} y1={topH + midH + botH / 2} x2={w} y2={topH + midH + botH / 2} stroke="#333" strokeWidth={1} />
+      {/* Bottom 2×2 grid lines */}
+      <line x1={0} y1={botY} x2={w} y2={botY} stroke="#333" strokeWidth={1} />
+      <line x1={w / 2} y1={botY} x2={w / 2} y2={h} stroke="#333" strokeWidth={1} />
+      <line x1={0} y1={botY + cellH} x2={w} y2={botY + cellH} stroke="#333" strokeWidth={1} />
 
-      <text x={w / 4} y={topH + midH + 10} textAnchor="middle" className="fill-text-muted text-[7px]">
+      {/* ES */}
+      <text x={w / 4} y={cellLabelY(0)} textAnchor="middle" className="fill-text-muted text-[7px] font-semibold">
         ES
       </text>
-      <text x={w / 4} y={topH + midH + botH / 2 - 4} textAnchor="middle" className="fill-text text-[11px] font-bold">
+      <text x={w / 4} y={cellValueY(0)} textAnchor="middle" className="fill-text text-[12px] font-bold">
         {activity.es ?? '—'}
       </text>
 
-      <text x={(w * 3) / 4} y={topH + midH + 10} textAnchor="middle" className="fill-text-muted text-[7px]">
+      {/* EF */}
+      <text x={(w * 3) / 4} y={cellLabelY(0)} textAnchor="middle" className="fill-text-muted text-[7px] font-semibold">
         EF
       </text>
-      <text
-        x={(w * 3) / 4}
-        y={topH + midH + botH / 2 - 4}
-        textAnchor="middle"
-        className="fill-text text-[11px] font-bold"
-      >
+      <text x={(w * 3) / 4} y={cellValueY(0)} textAnchor="middle" className="fill-text text-[12px] font-bold">
         {activity.ef ?? '—'}
       </text>
 
-      <text x={w / 4} y={topH + midH + botH / 2 + 10} textAnchor="middle" className="fill-text-muted text-[7px]">
+      {/* LS */}
+      <text x={w / 4} y={cellLabelY(1)} textAnchor="middle" className="fill-text-muted text-[7px] font-semibold">
         LS
       </text>
-      <text x={w / 4} y={h - 5} textAnchor="middle" className="fill-text text-[11px] font-bold">
+      <text x={w / 4} y={cellValueY(1)} textAnchor="middle" className="fill-text text-[12px] font-bold">
         {activity.ls ?? '—'}
       </text>
 
-      <text x={(w * 3) / 4} y={topH + midH + botH / 2 + 10} textAnchor="middle" className="fill-text-muted text-[7px]">
+      {/* LF */}
+      <text x={(w * 3) / 4} y={cellLabelY(1)} textAnchor="middle" className="fill-text-muted text-[7px] font-semibold">
         LF
       </text>
-      <text x={(w * 3) / 4} y={h - 5} textAnchor="middle" className="fill-text text-[11px] font-bold">
+      <text x={(w * 3) / 4} y={cellValueY(1)} textAnchor="middle" className="fill-text text-[12px] font-bold">
         {activity.lf ?? '—'}
       </text>
     </g>
