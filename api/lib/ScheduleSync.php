@@ -85,7 +85,7 @@ class ScheduleSync
             'label' => 'Project end',
         ];
 
-        // Merge in any actual-progress dates (e.g. weekly STEWA/IAR entries) that do
+        // Merge in any actual-progress dates (e.g. weekly SWA/STEWA/IAR entries) that do
         // not line up with a planned point so they still appear on the S-curve.
         foreach ($preservedActual as $dateKey => $val) {
             if ($val === null) {
@@ -111,7 +111,7 @@ class ScheduleSync
     }
 
     /**
-     * Actual progress points derived from STEWA and IAR reports for a project,
+     * Actual progress points derived from SWA, STEWA, and IAR reports for a project,
      * keyed by Y-m-d date. Later reports on the same date override earlier ones.
      * This lets the S-curve and bar chart update automatically as weekly reports
      * are added, without manual data entry.
@@ -122,9 +122,11 @@ class ScheduleSync
     {
         try {
             $stmt = $pdo->prepare(
-                "SELECT report_type, report_data, created_at
+                "SELECT report_type, report_data, line_items, created_at
                  FROM swa_stewa_reports
-                 WHERE project_id = ? AND report_type IN ('STEWA', 'IAR')
+                 WHERE project_id = ?
+                   AND report_type IN ('SWA', 'STEWA', 'IAR')
+                   AND status <> 'rejected'
                  ORDER BY created_at ASC, id ASC"
             );
             $stmt->execute([$projectId]);
@@ -152,21 +154,71 @@ class ScheduleSync
                 continue;
             }
 
-            $pct = null;
-            if ($row['report_type'] === 'STEWA') {
-                $pct = $data['percent_actual'] ?? null;
-            } else { // IAR
-                $pct = $data['actual_progress'] ?? $data['percent_actual'] ?? null;
-            }
-            if ($pct === null || $pct === '' || !is_numeric($pct)) {
+            $pct = self::progressPercentFromReport(
+                (string)$row['report_type'],
+                $data,
+                $row['line_items'] ?? null,
+            );
+            if ($pct === null) {
                 continue;
             }
 
-            $out[date('Y-m-d', $ts)] = round((float)$pct, 2);
+            $out[date('Y-m-d', $ts)] = $pct;
         }
 
         ksort($out);
         return $out;
+    }
+
+    /**
+     * Extract overall % complete from a report payload.
+     * SWA uses work-item weighted accomplishment; STEWA/IAR use percent fields.
+     */
+    public static function progressPercentFromReport(
+        string $reportType,
+        array $data,
+        mixed $lineItemsRaw = null,
+    ): ?float {
+        $pct = null;
+
+        if ($reportType === 'STEWA') {
+            $pct = $data['percent_actual'] ?? $data['percent_complete'] ?? null;
+        } elseif ($reportType === 'IAR') {
+            $pct = $data['actual_progress']
+                ?? $data['percent_actual']
+                ?? $data['percent_complete']
+                ?? null;
+        } elseif ($reportType === 'SWA') {
+            $totals = $data['computed_totals'] ?? null;
+            if (is_array($totals) && isset($totals['totalToDateWeightPct'])) {
+                $pct = $totals['totalToDateWeightPct'];
+            } else {
+                $pct = $data['percent_actual'] ?? $data['percent_complete'] ?? null;
+            }
+
+            if (($pct === null || $pct === '') && $lineItemsRaw !== null) {
+                $items = is_array($lineItemsRaw)
+                    ? $lineItemsRaw
+                    : (json_decode((string)$lineItemsRaw, true) ?: []);
+                if (is_array($items) && $items !== []) {
+                    try {
+                        $calc = WorkItemCalculator::compute(
+                            $items,
+                            (float)($data['advance_payment'] ?? 0),
+                        );
+                        $pct = $calc['totals']['totalToDateWeightPct'] ?? null;
+                    } catch (\Throwable) {
+                        $pct = null;
+                    }
+                }
+            }
+        }
+
+        if ($pct === null || $pct === '' || !is_numeric($pct)) {
+            return null;
+        }
+
+        return round(max(0.0, min(100.0, (float)$pct)), 2);
     }
 
     /** @param array<int, array<string, mixed>> $scheduledActivities */

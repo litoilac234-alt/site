@@ -136,7 +136,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
     $barTotalDays = $totalDaysFromPdm ?: (int)$set['bar_chart_total_days'];
     $timeNow = (int)$set['bar_chart_time_now'];
 
-    // Auto-update the bar chart from weekly STEWA / IAR actual progress. The time-now
+    // Auto-update the bar chart from weekly SWA / STEWA / IAR actual progress. The time-now
     // line follows the latest report date, and tasks that should be complete for the
     // achieved progress get an actual end day automatically (manual values are kept).
     $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);

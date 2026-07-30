@@ -90,7 +90,7 @@ export function BarChartPage() {
           <h1 className="mt-3 text-2xl font-bold text-text">Construction Schedule Bar Chart</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
             Tasks are generated automatically from the PDM schedule. Actual progress and the
-            time-now line update automatically from the weekly STEWA and IAR entries.
+            time-now line update automatically from weekly SWA, STEWA, and IAR entries.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

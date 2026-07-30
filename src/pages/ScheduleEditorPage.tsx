@@ -254,10 +254,15 @@ export function ScheduleEditorPage() {
                         </td>
                         <td className="py-2 pr-2">
                           <input
-                            type="number"
-                            min={1}
+                            type="text"
+                            inputMode="numeric"
                             value={a.duration}
-                            onChange={(e) => updateActivity(a.id, { duration: Number(e.target.value) })}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/[^\d]/g, '');
+                              updateActivity(a.id, {
+                                duration: raw === '' ? 0 : Number(raw),
+                              });
+                            }}
                             className="w-16 rounded border border-border px-2 py-1"
                           />
                         </td>

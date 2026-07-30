@@ -52,7 +52,7 @@ export function SCurvePage() {
           <h1 className="mt-3 text-2xl font-bold text-text">Progress S-Curve Analysis</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
             Planned progress is built from each PDM activity finish date. Actual progress updates
-            automatically from the weekly STEWA and IAR entries — no manual input needed.
+            automatically from weekly SWA, STEWA, and IAR entries — no manual input needed.
           </p>
         </div>
         <ProjectSelect value={projectId} onChange={setProjectId} className="min-w-[200px]" />
