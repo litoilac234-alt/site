@@ -82,8 +82,10 @@ export function PdmPage() {
           setCriticalPath(data.criticalPath);
           setError(data.pdmError ?? '');
         }
-      } catch {
-        if (!cancelled) setError('Could not load PDM schedule from database.');
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Could not load PDM schedule from database.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -13,6 +13,7 @@ $pdo = db();
 try {
     DatabaseSetup::ensureScheduleTables($pdo);
     DatabaseSetup::ensureUsersAndProjects($pdo);
+    DatabaseSetup::ensureSwaStewaTables($pdo);
     DatabaseSetup::ensureSCurveTable($pdo);
     DatabaseSetup::seedScheduleIfEmpty($pdo);
 } catch (Throwable $e) {
@@ -173,8 +174,15 @@ function loadSchedule(PDO $pdo, int $projectId): array
 
 if ($method === 'GET' && $action === 'get') {
     Auth::requireAuth();
-    $projectId = (int)($_GET['project_id'] ?? 1);
-    jsonResponse(loadSchedule($pdo, $projectId));
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    try {
+        $projectId = (int)($_GET['project_id'] ?? 1);
+        jsonResponse(loadSchedule($pdo, $projectId));
+    } catch (Throwable $e) {
+        jsonError('Could not load schedule: ' . $e->getMessage(), 500);
+    }
 }
 
 if ($method === 'POST' && $action === 'save') {

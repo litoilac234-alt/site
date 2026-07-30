@@ -59,8 +59,10 @@ export function BarChartPage() {
           setTotalDays(data.barChartTotalDays);
           setTimeNow(data.barChartTimeNow);
         }
-      } catch {
-        if (!cancelled) setError('Could not load bar chart from database.');
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Could not load bar chart from database.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

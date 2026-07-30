@@ -16,10 +16,12 @@ RUN npm run build
 FROM composer:2 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
+COPY api ./api
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
     --ignore-platform-req=ext-gd \
     --ignore-platform-req=ext-zip \
-    --ignore-platform-req=ext-mbstring
+    --ignore-platform-req=ext-mbstring \
+  && composer dump-autoload --optimize --no-interaction
 
 # --- Runtime: single PHP process (reliable on Railway) ---
 FROM php:8.2-cli-bookworm

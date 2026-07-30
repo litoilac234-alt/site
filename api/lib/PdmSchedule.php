@@ -49,13 +49,18 @@ class PdmSchedule
             return ['error' => 'Circular dependency detected'];
         }
 
+        if ($map === []) {
+            return ['activities' => [], 'projectDuration' => 0, 'criticalPath' => []];
+        }
+
         foreach ($topo as $id) {
             $incoming = $preds[$id] ?? [];
             $es = 0;
             foreach ($incoming as $dep) {
                 $pred = $map[(string)$dep['fromId']];
                 $lag = (int)($dep['lag'] ?? 0);
-                $es = max($es, match ($dep['type']) {
+                $type = strtoupper((string)($dep['type'] ?? 'FS'));
+                $es = max($es, match ($type) {
                     'FS' => (int)$pred['ef'] + $lag,
                     'SS' => (int)$pred['es'] + $lag,
                     'FF' => (int)$pred['ef'] + $lag - (int)$map[$id]['duration'],
@@ -67,7 +72,8 @@ class PdmSchedule
             $map[$id]['ef'] = $es + (int)$map[$id]['duration'];
         }
 
-        $projectEnd = max(array_column($map, 'ef'));
+        $efValues = array_column($map, 'ef');
+        $projectEnd = $efValues !== [] ? (int)max($efValues) : 0;
 
         foreach (array_reverse($topo) as $id) {
             $outgoing = $succs[$id] ?? [];
@@ -75,7 +81,8 @@ class PdmSchedule
             foreach ($outgoing as $dep) {
                 $succ = $map[(string)$dep['toId']];
                 $lag = (int)($dep['lag'] ?? 0);
-                $lf = min($lf, match ($dep['type']) {
+                $type = strtoupper((string)($dep['type'] ?? 'FS'));
+                $lf = min($lf, match ($type) {
                     'FS', 'SS' => (int)($succ['ls'] ?? $projectEnd) - $lag,
                     'FF' => (int)($succ['lf'] ?? $projectEnd) - $lag,
                     'SF' => (int)($succ['lf'] ?? $projectEnd) - $lag + (int)$map[$id]['duration'],
