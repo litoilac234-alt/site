@@ -53,9 +53,11 @@ export function ReportsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const visible = isReviewer
-    ? reports.filter((r) => r.status === 'generated')
-    : reports;
+  const isApprovedReport = (status: string) =>
+    status === 'approved' || status === 'generated';
+
+  // Folders only list approved / finalized reports (not drafts or pending).
+  const visible = reports.filter((r) => isApprovedReport(r.status));
 
   const folders = REPORT_TYPES.map((rt) => ({
     ...rt,
@@ -251,9 +253,8 @@ export function ReportsPage() {
         <div className={`rounded-2xl border p-6 ${openFolderMeta.color}`}>
           <p className="font-bold text-text">{openFolderMeta.label} folder</p>
           <p className="mt-2 text-sm text-text-muted">
-            {isReviewer
-              ? `No finalized ${openFolderMeta.label} reports yet.`
-              : `No ${openFolderMeta.label} reports in this folder yet.`}
+            No approved {openFolderMeta.label} reports in this folder yet. Drafts and
+            pending reports stay in the workflow until they are approved.
           </p>
         </div>
       ) : (
