@@ -54,7 +54,7 @@ export function PublicReportViewPage() {
 
   const data = (report.report_data ?? {}) as Record<string, string>;
   const status = String(report.status ?? '');
-  const backTo = user ? '/swa-stewa' : '/';
+  const backTo = user ? '/reports' : '/';
   const backLabel = user ? 'Reports Hub' : 'Return to home';
 
   return (

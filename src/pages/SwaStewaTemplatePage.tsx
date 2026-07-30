@@ -69,7 +69,7 @@ export function SwaStewaTemplatePage() {
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
-      <Link to="/swa-stewa" className="text-sm text-text-muted hover:text-primary">
+      <Link to="/reports" className="text-sm text-text-muted hover:text-primary">
         ← Reports Hub
       </Link>
       <h1 className="mt-4 text-2xl font-bold text-text">Upload Excel Templates</h1>
