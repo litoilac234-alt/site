@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SubmissionSuccessSign } from '../components/ui/SubmissionSuccessSign';
 import { uploadTemplate } from '../lib/api';
 import type { ReportType } from '../types';
 
@@ -9,6 +10,8 @@ export function TemplateManagePage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successType, setSuccessType] = useState('');
 
   const handleUpload = async (type: ReportType, file: File | null) => {
     if (!file) return;
@@ -18,6 +21,8 @@ export function TemplateManagePage() {
     try {
       const result = await uploadTemplate(type, file);
       setMessage(`${type}: ${result.message}`);
+      setSuccessType(type);
+      setShowSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -71,6 +76,13 @@ export function TemplateManagePage() {
           <li>See <code>templates/HOW_TO_ADD_TEMPLATES.txt</code> for full instructions.</li>
         </ol>
       </div>
+
+      <SubmissionSuccessSign
+        open={showSuccess}
+        title="Submission Successful"
+        message={successType ? `${successType} template file uploaded.` : undefined}
+        onClose={() => setShowSuccess(false)}
+      />
     </main>
   );
 }
