@@ -9,10 +9,10 @@ import type { BarChartTask } from '../types';
 
 function getScheduleStatus(
   plannedEnd: number,
-  actualEnd: number | undefined,
+  actualEnd: number | null | undefined,
   timeNow: number,
 ): 'ahead' | 'on' | 'behind' | 'planned' {
-  if (actualEnd === undefined) return 'planned';
+  if (actualEnd == null) return 'planned';
   if (actualEnd < timeNow && plannedEnd >= timeNow) return 'behind';
   if (actualEnd > plannedEnd) return 'behind';
   if (actualEnd < plannedEnd) return 'ahead';
@@ -157,6 +157,7 @@ export function BarChartPage() {
             </thead>
             <tbody>
               {tasks.map((task) => {
+                const hasActual = task.actualEndDay != null;
                 const status = getScheduleStatus(task.endDay, task.actualEndDay, timeNow);
                 const plannedSpan = Math.max(0, task.endDay - task.startDay + 1);
                 return (
@@ -185,11 +186,11 @@ export function BarChartPage() {
                           >
                             <div
                               className={`h-4 w-full rounded-sm ${
-                                task.actualEndDay !== undefined
-                                  ? STATUS_COLORS[status]
-                                  : STATUS_COLORS.planned
+                                hasActual ? STATUS_COLORS[status] : STATUS_COLORS.planned
                               }`}
-                              title={`Days ${task.startDay}–${task.endDay}`}
+                              title={`Days ${task.startDay}–${task.endDay}${
+                                hasActual ? ` · actual end ${task.actualEndDay}` : ' · Target Plan'
+                              }`}
                             />
                           </td>
                         );
