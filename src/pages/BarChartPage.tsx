@@ -24,7 +24,8 @@ const STATUS_COLORS = {
   ahead: 'bg-primary',
   on: 'bg-amber-500',
   behind: 'bg-red-500',
-  planned: 'bg-gray-300',
+  /** Target plan — used when schedule is first entered (no actual progress yet). */
+  planned: 'bg-blue-600',
 };
 
 function buildWeeks(totalDays: number) {
@@ -119,7 +120,7 @@ export function BarChartPage() {
           <span className="h-3 w-6 rounded bg-primary" /> Ahead of schedule
         </span>
         <span className="flex items-center gap-2">
-          <span className="h-3 w-6 rounded bg-gray-300" /> Target Plan (not started)
+          <span className="h-3 w-6 rounded bg-blue-600" /> Target Plan (not started)
         </span>
       </div>
 

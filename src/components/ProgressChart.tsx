@@ -67,9 +67,9 @@ export function ProgressChart() {
             <Line
               type="monotone"
               dataKey="planned"
-              stroke="#b8b8b0"
+              stroke="#2563eb"
               strokeWidth={2}
-              dot={{ r: 4, fill: '#fff', stroke: '#b8b8b0', strokeWidth: 2 }}
+              dot={{ r: 4, fill: '#fff', stroke: '#2563eb', strokeWidth: 2 }}
               connectNulls
               name="planned"
             />
