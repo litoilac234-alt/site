@@ -260,7 +260,7 @@ class ScheduleSync
     public static function loadPdmResult(PDO $pdo, int $projectId): array
     {
         $acts = $pdo->prepare(
-            'SELECT id, activity_number AS number, activity_name AS name, duration
+            'SELECT id, activity_number AS number, activity_name AS name, duration, es_override
              FROM pdm_activities WHERE project_id = ? ORDER BY id'
         );
         $acts->execute([$projectId]);
@@ -271,6 +271,7 @@ class ScheduleSync
                 'number' => $row['number'],
                 'name' => $row['name'],
                 'duration' => (int)$row['duration'],
+                'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
             ];
         }
 

@@ -157,8 +157,9 @@ export function ScheduleEditorPage() {
           </span>
           <h1 className="mt-3 text-2xl font-bold text-text">Prepare Construction Schedule</h1>
           <p className="mt-2 max-w-2xl text-sm text-text-muted">
-            Enter PDM activities and dependencies. When you save, the system automatically builds the
-            bar chart and S-curve from the same schedule.
+            Enter PDM activities and dependencies. Use Early Start (ES) when activities must start
+            on the same day and run in parallel. When you save, the system builds the bar chart and
+            S-curve from the same schedule.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -232,6 +233,9 @@ export function ScheduleEditorPage() {
                       <th className="py-2 pr-2">No.</th>
                       <th className="py-2 pr-2">Name</th>
                       <th className="py-2 pr-2">Duration</th>
+                      <th className="py-2 pr-2" title="Optional Early Start day. Leave blank for formula. Set 1 on multiple activities to start them in parallel on Day 1.">
+                        ES
+                      </th>
                       <th className="py-2" />
                     </tr>
                   </thead>
@@ -266,6 +270,27 @@ export function ScheduleEditorPage() {
                             className="w-16 rounded border border-border px-2 py-1"
                           />
                         </td>
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={a.esOverride ?? ''}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^\d]/g, '');
+                                updateActivity(a.id, {
+                                  esOverride: raw === '' ? null : Number(raw),
+                                });
+                              }}
+                              placeholder="auto"
+                              title="Early Start day (1 = Day 1). Leave blank to use the normal ES formula."
+                              className="w-14 rounded border border-border px-2 py-1"
+                            />
+                            <span className="whitespace-nowrap text-[10px] text-text-muted">
+                              → Day {(a.es ?? 0) + 1}
+                            </span>
+                          </div>
+                        </td>
                         <td className="py-2 text-right">
                           <button
                             type="button"
@@ -287,6 +312,11 @@ export function ScheduleEditorPage() {
                     ))}
                   </tbody>
                 </table>
+                <p className="mt-3 text-xs text-text-muted">
+                  Early Start (ES): leave blank to keep the normal formula. To run activities in
+                  parallel (e.g. Reinforcing and Concrete Pouring), set the same ES day on each —
+                  use <strong>1</strong> to start all of them on Day 1.
+                </p>
               </div>
 
               <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">

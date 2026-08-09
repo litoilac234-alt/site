@@ -21,9 +21,21 @@ if ($method === 'GET') {
     if (!$projectId) jsonError('project_id required');
 
     $pdo = db();
-    $acts = $pdo->prepare('SELECT id, activity_number AS number, activity_name AS name, duration FROM pdm_activities WHERE project_id = ?');
+    $acts = $pdo->prepare(
+        'SELECT id, activity_number AS number, activity_name AS name, duration, es_override
+         FROM pdm_activities WHERE project_id = ?'
+    );
     $acts->execute([$projectId]);
-    $activities = $acts->fetchAll();
+    $activities = [];
+    foreach ($acts->fetchAll() as $row) {
+        $activities[] = [
+            'id' => (string)$row['id'],
+            'number' => $row['number'],
+            'name' => $row['name'],
+            'duration' => (int)$row['duration'],
+            'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
+        ];
+    }
 
     $deps = $pdo->prepare('SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS `lag` FROM pdm_dependencies WHERE project_id = ?');
     $deps->execute([$projectId]);

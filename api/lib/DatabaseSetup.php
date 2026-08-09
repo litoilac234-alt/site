@@ -134,6 +134,7 @@ class DatabaseSetup
               activity_number VARCHAR(20) NOT NULL,
               activity_name VARCHAR(255) NOT NULL,
               duration INT UNSIGNED NOT NULL DEFAULT 1,
+              es_override INT UNSIGNED NULL,
               es INT UNSIGNED DEFAULT 0,
               ef INT UNSIGNED DEFAULT 0,
               ls INT UNSIGNED DEFAULT 0,
@@ -143,6 +144,12 @@ class DatabaseSetup
               pos_y INT DEFAULT 0
             )
         ");
+
+        try {
+            $pdo->exec('ALTER TABLE pdm_activities ADD COLUMN es_override INT UNSIGNED NULL AFTER duration');
+        } catch (\Throwable) {
+            // Column already exists on upgraded databases
+        }
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS pdm_dependencies (

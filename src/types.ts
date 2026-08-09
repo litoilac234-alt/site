@@ -81,6 +81,8 @@ export interface PdmActivity {
   number: string;
   name: string;
   duration: number;
+  /** Optional 1-based Early Start day override (1 = Day 1). Null/undefined = use formula. */
+  esOverride?: number | null;
   es?: number;
   ef?: number;
   ls?: number;

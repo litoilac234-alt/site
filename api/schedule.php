@@ -26,7 +26,7 @@ $action = $_GET['action'] ?? ($method === 'GET' ? 'get' : '');
 function loadSchedule(PDO $pdo, int $projectId): array
 {
     $acts = $pdo->prepare(
-        'SELECT id, activity_number AS number, activity_name AS name, duration, pos_x, pos_y
+        'SELECT id, activity_number AS number, activity_name AS name, duration, es_override, pos_x, pos_y
          FROM pdm_activities WHERE project_id = ? ORDER BY id'
     );
     $acts->execute([$projectId]);
@@ -37,6 +37,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
             'number' => $row['number'],
             'name' => $row['name'],
             'duration' => (int)$row['duration'],
+            'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
             'posX' => (int)$row['pos_x'],
             'posY' => (int)$row['pos_y'],
         ];
@@ -84,6 +85,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
         'number' => $a['number'],
         'name' => $a['name'],
         'duration' => $a['duration'],
+        'esOverride' => $a['esOverride'] ?? null,
     ], $activities);
 
     $pdm = $activities ? PdmSchedule::calculate($pdmInput, $dependencies) : [
@@ -221,16 +223,23 @@ if ($method === 'POST' && $action === 'save') {
 
         $idMap = [];
         $actStmt = $pdo->prepare(
-            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, pos_x, pos_y)
-             VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, es_override, pos_x, pos_y)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($activities as $i => $a) {
             $clientId = (string)($a['id'] ?? ('new-' . $i));
+            $esOverride = $a['esOverride'] ?? $a['es_override'] ?? null;
+            if ($esOverride === '' || $esOverride === null) {
+                $esOverride = null;
+            } else {
+                $esOverride = max(1, (int)$esOverride);
+            }
             $actStmt->execute([
                 $projectId,
                 $a['number'] ?? chr(65 + $i),
                 $a['name'] ?? 'Activity',
                 max(1, (int)($a['duration'] ?? 1)),
+                $esOverride,
                 (int)($a['posX'] ?? 120 + ($i % 3) * 160),
                 (int)($a['posY'] ?? 80 + intdiv($i, 3) * 140),
             ]);
@@ -258,7 +267,7 @@ if ($method === 'POST' && $action === 'save') {
 
         $pdmInput = [];
         $actRows = $pdo->prepare(
-            'SELECT id, activity_number AS number, activity_name AS name, duration
+            'SELECT id, activity_number AS number, activity_name AS name, duration, es_override
              FROM pdm_activities WHERE project_id = ? ORDER BY id'
         );
         $actRows->execute([$projectId]);
@@ -268,6 +277,7 @@ if ($method === 'POST' && $action === 'save') {
                 'number' => $row['number'],
                 'name' => $row['name'],
                 'duration' => (int)$row['duration'],
+                'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
             ];
         }
 
