@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SubmissionSuccessSign } from '../components/ui/SubmissionSuccessSign';
 import { apiUrl } from '../lib/paths';
 
 const API = apiUrl('swa_stewa.php');
@@ -19,6 +20,8 @@ export function SwaStewaTemplatePage() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successType, setSuccessType] = useState('');
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -55,6 +58,8 @@ export function SwaStewaTemplatePage() {
       }
       if (!res.ok) throw new Error(data.error ?? 'Upload failed');
       setMessage(`${type}: ${data.message}`);
+      setSuccessType(type);
+      setShowSuccess(true);
       await loadTemplates();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -218,6 +223,13 @@ export function SwaStewaTemplatePage() {
           <li>Drag the file into the box above — it will show as ✓ Active when stored.</li>
         </ol>
       </div>
+
+      <SubmissionSuccessSign
+        open={showSuccess}
+        title="Submission Successful"
+        message={successType ? `${successType} template file uploaded.` : undefined}
+        onClose={() => setShowSuccess(false)}
+      />
     </main>
   );
 }

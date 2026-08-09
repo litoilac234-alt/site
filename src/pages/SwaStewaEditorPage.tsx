@@ -23,6 +23,7 @@ import { FormField, TextArea, TextInput } from '../components/ui/FormField';
 import { FormSection } from '../components/ui/FormSection';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ReportTypeBadge } from '../components/ui/StatusBadge';
+import { SubmissionSuccessSign } from '../components/ui/SubmissionSuccessSign';
 import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
 import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import {
@@ -721,32 +722,17 @@ export function SwaStewaEditorPage() {
       </div>
 
       {showSubmittedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-2xl">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-light text-2xl text-primary">
-              ✓
-            </div>
-            <h3 className="mt-4 text-xl font-bold text-text">Submitted</h3>
-            <p className="mt-2 text-sm text-text-muted">
-              Your {reportType} report
-              {reportNumber ? (
-                <>
-                  {' '}
-                  <span className="font-mono font-semibold text-text">{reportNumber}</span>
-                </>
-              ) : null}{' '}
-              has been submitted successfully and is now waiting for Engineer II review.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Button type="button" variant="primary" onClick={() => setShowSubmittedModal(false)}>
-                OK
-              </Button>
-              <ButtonLink to="/workflow" variant="secondary">
-                Go to My Submissions
-              </ButtonLink>
-            </div>
-          </div>
-        </div>
+        <SubmissionSuccessSign
+          open={showSubmittedModal}
+          title="Submission Successful"
+          message={
+            reportNumber
+              ? `${reportType} ${reportNumber} is waiting for Engineer II review.`
+              : `Your ${reportType} report is waiting for Engineer II review.`
+          }
+          onClose={() => setShowSubmittedModal(false)}
+          autoCloseMs={0}
+        />
       )}
 
       {showPreview && (
