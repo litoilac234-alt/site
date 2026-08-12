@@ -67,9 +67,9 @@ export function PdmNode({ activity, x, y }: PdmNodeProps) {
         width={w}
         height={h}
         rx={4}
-        fill={critical ? '#fef3e2' : '#fff'}
-        stroke={critical ? '#c4a574' : '#4a6353'}
-        strokeWidth={critical ? 2.5 : 1.5}
+        fill={critical ? '#fef2f2' : '#fff'}
+        stroke={critical ? '#dc2626' : '#4a6353'}
+        strokeWidth={critical ? 2.75 : 1.5}
       />
       <line x1={0} y1={row1} x2={w} y2={row1} stroke="#e0dfd8" />
       <line x1={0} y1={row2} x2={w} y2={row2} stroke="#e0dfd8" />

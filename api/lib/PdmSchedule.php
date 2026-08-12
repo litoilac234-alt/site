@@ -103,10 +103,16 @@ class PdmSchedule
             }
             $map[$id]['lf'] = $lf;
             $map[$id]['ls'] = $lf - (int)$map[$id]['duration'];
-            $map[$id]['isCritical'] = $map[$id]['ls'] === $map[$id]['es'];
+            // Critical when total float is zero: (LF − EF) = 0 and (LS − ES) = 0.
+            $es = (int)$map[$id]['es'];
+            $ef = (int)$map[$id]['ef'];
+            $ls = (int)$map[$id]['ls'];
+            $lfVal = (int)$map[$id]['lf'];
+            $map[$id]['isCritical'] = ($lfVal - $ef) === 0 && ($ls - $es) === 0;
         }
 
         $critical = array_values(array_filter($map, fn($a) => !empty($a['isCritical'])));
+        usort($critical, static fn($a, $b) => ((int)($a['es'] ?? 0)) <=> ((int)($b['es'] ?? 0)));
 
         return [
             'activities' => array_values($map),

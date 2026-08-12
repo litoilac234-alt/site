@@ -119,8 +119,9 @@ export function PdmPage() {
           <h1 className="mt-3 text-2xl font-bold text-text">Precedence Diagramming Method</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
             Network diagram showing activity sequencing, dependencies (FS, SS, FF, SF), and
-            automatically computed critical path — the longest dependent sequence determining
-            shortest project completion time.
+            critical path. An activity is critical when total float is zero:{' '}
+            <strong>(LF − EF) = 0</strong> and <strong>(LS − ES) = 0</strong> — those nodes and
+            links are highlighted in red after the schedule is calculated.
           </p>
         </div>
         {user?.role === 'contractor' && (
@@ -151,7 +152,7 @@ export function PdmPage() {
             </div>
             <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <p className="text-xs uppercase text-text-muted">Critical Activities</p>
-              <p className="text-2xl font-bold text-warning">{criticalNumbers || '—'}</p>
+              <p className="text-2xl font-bold text-red-600">{criticalNumbers || '—'}</p>
             </div>
             <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <p className="text-xs uppercase text-text-muted">Dependencies</p>
@@ -179,7 +180,7 @@ export function PdmPage() {
                   <path d="M0,0 L6,3 L0,6" fill="#9ca89f" />
                 </marker>
                 <marker id="arrow-critical" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6" fill="#c4a574" />
+                  <path d="M0,0 L6,3 L0,6" fill="#dc2626" />
                 </marker>
               </defs>
 
@@ -188,9 +189,9 @@ export function PdmPage() {
                 const to = positions[dep.toId];
                 if (!from || !to) return null;
                 const isCritical =
-                  activities.find((a) => a.id === dep.fromId)?.isCritical &&
-                  activities.find((a) => a.id === dep.toId)?.isCritical;
-                const stroke = isCritical ? '#c4a574' : '#9ca89f';
+                  !!activities.find((a) => a.id === dep.fromId)?.isCritical &&
+                  !!activities.find((a) => a.id === dep.toId)?.isCritical;
+                const stroke = isCritical ? '#dc2626' : '#9ca89f';
                 const edge = dependencyEdge(from, to);
                 if (edge.curved) {
                   return (
@@ -199,7 +200,7 @@ export function PdmPage() {
                       d={edge.d}
                       fill="none"
                       stroke={stroke}
-                      strokeWidth={isCritical ? 2.5 : 1.5}
+                      strokeWidth={isCritical ? 3 : 1.5}
                       markerEnd={isCritical ? 'url(#arrow-critical)' : 'url(#arrow)'}
                     />
                   );
@@ -212,7 +213,7 @@ export function PdmPage() {
                     x2={edge.x2}
                     y2={edge.y2}
                     stroke={stroke}
-                    strokeWidth={isCritical ? 2.5 : 1.5}
+                    strokeWidth={isCritical ? 3 : 1.5}
                     markerEnd={isCritical ? 'url(#arrow-critical)' : 'url(#arrow)'}
                   />
                 );
@@ -224,6 +225,16 @@ export function PdmPage() {
                 return <PdmNode key={act.id} activity={act} x={pos.x} y={pos.y} />;
               })}
             </svg>
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-text-muted">
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-0.5 w-6 bg-red-600" />
+                Critical path (LF−EF = 0 and LS−ES = 0)
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-0.5 w-6 bg-[#9ca89f]" />
+                Non-critical dependency
+              </span>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -250,12 +261,20 @@ export function PdmPage() {
                     <th>EF</th>
                     <th>LS</th>
                     <th>LF</th>
+                    <th>LF−EF</th>
+                    <th>LS−ES</th>
                     <th>Critical</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activities.map((a) => (
-                    <tr key={a.id} className="border-b border-border/50">
+                  {activities.map((a) => {
+                    const floatEf = (a.lf ?? 0) - (a.ef ?? 0);
+                    const floatEs = (a.ls ?? 0) - (a.es ?? 0);
+                    return (
+                    <tr
+                      key={a.id}
+                      className={`border-b border-border/50 ${a.isCritical ? 'bg-red-50' : ''}`}
+                    >
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
@@ -263,9 +282,14 @@ export function PdmPage() {
                       <td>{a.ef}</td>
                       <td>{a.ls}</td>
                       <td>{a.lf}</td>
-                      <td>{a.isCritical ? 'Yes' : '—'}</td>
+                      <td>{floatEf}</td>
+                      <td>{floatEs}</td>
+                      <td className={a.isCritical ? 'font-semibold text-red-600' : ''}>
+                        {a.isCritical ? 'Yes' : '—'}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               </div>

@@ -85,7 +85,12 @@ export function calculatePdmSchedule(
       );
     }
     act.ls = act.lf - act.duration;
-    act.isCritical = act.ls === act.es;
+    // Critical when total float is zero: (LF − EF) = 0 and (LS − ES) = 0.
+    const es = act.es ?? 0;
+    const ef = act.ef ?? 0;
+    const ls = act.ls ?? 0;
+    const lf = act.lf ?? 0;
+    act.isCritical = lf - ef === 0 && ls - es === 0;
   }
 
   return [...map.values()];
@@ -121,7 +126,9 @@ function topologicalSort(
 }
 
 export function getCriticalPath(activities: PdmActivity[]): PdmActivity[] {
-  return activities.filter((a) => a.isCritical);
+  return activities
+    .filter((a) => a.isCritical)
+    .sort((a, b) => (a.es ?? 0) - (b.es ?? 0));
 }
 
 export const DEPENDENCY_LABELS: Record<DependencyType, string> = {
