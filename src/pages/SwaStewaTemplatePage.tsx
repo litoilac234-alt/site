@@ -19,13 +19,14 @@ export function SwaStewaTemplatePage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
+  const [clearing, setClearing] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successType, setSuccessType] = useState('');
 
   const loadTemplates = useCallback(async () => {
     try {
-      const res = await fetch(`${API}?action=templates`);
+      const res = await fetch(`${API}?action=templates`, { credentials: 'same-origin' });
       const data = await res.json();
       if (data.templates) setTemplates(data.templates);
     } catch {
@@ -48,7 +49,7 @@ export function SwaStewaTemplatePage() {
     form.append('template_file', file);
 
     try {
-      const res = await fetch(API, { method: 'POST', body: form });
+      const res = await fetch(API, { method: 'POST', body: form, credentials: 'same-origin' });
       const text = await res.text();
       let data: { message?: string; error?: string };
       try {
@@ -69,6 +70,32 @@ export function SwaStewaTemplatePage() {
     }
   };
 
+  const clearTemplate = async (type: 'SWA' | 'STEWA' | 'IAR') => {
+    if (!window.confirm(`Clear the ${type} template? You can upload a new Excel file with formulas after.`)) {
+      return;
+    }
+    setClearing(type);
+    setError('');
+    setMessage('');
+    try {
+      const res = await fetch(API, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_template', report_type: type }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Could not clear template');
+      if (data.templates) setTemplates(data.templates);
+      else await loadTemplates();
+      setMessage(data.message ?? `${type} template cleared.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not clear template');
+    } finally {
+      setClearing(null);
+    }
+  };
+
   const getInfo = (type: 'SWA' | 'STEWA' | 'IAR') =>
     templates.find((t) => t.report_type === type);
 
@@ -79,11 +106,10 @@ export function SwaStewaTemplatePage() {
       </Link>
       <h1 className="mt-4 text-2xl font-bold text-text">Upload Excel Templates</h1>
       <p className="mt-2 max-w-2xl text-sm text-text-muted">
-        Upload your official <strong>.xlsx</strong> files. After upload, the file name and
-        status appear below each box.
+        Upload your official <strong>.xlsx</strong> files (formulas are kept). Clear an old template
+        first if you are replacing it with a new file.
       </p>
 
-      {/* Current templates summary */}
       <div className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
           Currently stored templates
@@ -111,15 +137,25 @@ export function SwaStewaTemplatePage() {
                       <p className="text-xs text-text-muted">
                         {info.file_size_label} · Uploaded {info.uploaded_at}
                       </p>
-                      {info.download_url && (
-                        <a
-                          href={info.download_url}
-                          className="mt-1 inline-block text-xs font-medium text-primary underline"
-                          download
+                      <div className="mt-1 flex flex-wrap gap-3">
+                        {info.download_url && (
+                          <a
+                            href={info.download_url}
+                            className="text-xs font-medium text-primary underline"
+                            download
+                          >
+                            Download
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => clearTemplate(type)}
+                          disabled={clearing === type}
+                          className="text-xs font-medium text-red-600 underline disabled:opacity-50"
                         >
-                          Download file
-                        </a>
-                      )}
+                          {clearing === type ? 'Clearing…' : 'Clear'}
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <p className="text-sm text-text-muted">No template uploaded yet</p>
@@ -139,7 +175,7 @@ export function SwaStewaTemplatePage() {
 
           return (
             <div key={type} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="font-bold text-text">{type} Excel Template</p>
                 {info?.exists && (
                   <span className="rounded-full bg-primary-light px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
@@ -148,7 +184,7 @@ export function SwaStewaTemplatePage() {
                 )}
               </div>
               <p className="mt-1 text-xs text-text-muted">
-                Saves to templates/excel/{type}.xlsx
+                Saves to templates/excel/{type}.xlsx — Excel formulas are preserved
               </p>
 
               <div
@@ -190,8 +226,18 @@ export function SwaStewaTemplatePage() {
               </div>
 
               {info?.exists && (
-                <div className="mt-4 rounded-lg border border-primary/20 bg-primary-light/30 px-3 py-2 text-xs text-primary">
-                  <strong>Stored:</strong> {info.filename} ({info.file_size_label})
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary-light/30 px-3 py-2 text-xs text-primary">
+                  <span>
+                    <strong>Stored:</strong> {info.filename} ({info.file_size_label})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => clearTemplate(type)}
+                    disabled={clearing === type}
+                    className="font-semibold text-red-600 underline disabled:opacity-50"
+                  >
+                    {clearing === type ? 'Clearing…' : 'Clear template'}
+                  </button>
                 </div>
               )}
             </div>
@@ -209,18 +255,14 @@ export function SwaStewaTemplatePage() {
       )}
 
       <div className="mt-8 rounded-2xl border border-border bg-card p-6 text-sm">
-        <h2 className="font-semibold text-text">How to prepare your Excel template</h2>
+        <h2 className="font-semibold text-text">How to replace a template with formulas</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-text-muted">
-          <li>Open your official STEWA, SWA, or IAR file in Microsoft Excel.</li>
           <li>
-            In blank fields, type placeholders like <code>{'{{project_name}}'}</code>,{' '}
-            <code>{'{{contract_amount}}'}</code>.
+            Click <strong>Clear template</strong> on STEWA, SWA, or IAR to remove the old file.
           </li>
-          <li>
-            For SWA tables, use one row with <code>{'{{item_no}}'}</code>,{' '}
-            <code>{'{{item_description}}'}</code>, etc.
-          </li>
-          <li>Drag the file into the box above — it will show as ✓ Active when stored.</li>
+          <li>Prepare your new Excel file with formulas and placeholders like{' '}
+            <code>{'{{project_name}}'}</code>.</li>
+          <li>Upload or drag the new <code>.xlsx</code> into the box — it becomes Active.</li>
         </ol>
       </div>
 

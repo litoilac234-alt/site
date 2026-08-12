@@ -371,9 +371,16 @@ if ($method === 'POST') {
             }
             $dest = $excelDir . '/' . $type . '.xlsx';
             $stored = 'templates/excel/' . $type . '.xlsx';
+            // Replace any previous template so the new file (with formulas) is used.
+            if (is_file($dest)) {
+                unlink($dest);
+            }
         } else {
             $dest = $dir . '/' . $type . '.' . $ext;
             $stored = 'templates/uploads/' . $type . '.' . $ext;
+            if (is_file($dest)) {
+                unlink($dest);
+            }
         }
 
         if (!move_uploaded_file($_FILES['template_file']['tmp_name'], $dest)) {
@@ -706,6 +713,44 @@ if ($method === 'POST') {
             // queue logged in swa_email_queue
         }
         jsonResponse(['status' => 'rejected']);
+    }
+
+    if ($action === 'clear_template') {
+        Auth::requireRoles(['engineer_4']);
+        $type = strtoupper(trim((string)($body['report_type'] ?? '')));
+        if (!in_array($type, ['SWA', 'STEWA', 'IAR'], true)) {
+            jsonError('Invalid report_type');
+        }
+
+        $excelPath = dirname(__DIR__) . '/templates/excel/' . $type . '.xlsx';
+        $removed = [];
+        if (is_file($excelPath)) {
+            if (!unlink($excelPath)) {
+                jsonError('Could not delete Excel template file.');
+            }
+            $removed[] = 'templates/excel/' . $type . '.xlsx';
+        }
+
+        $uploadDir = dirname(__DIR__) . '/templates/uploads';
+        foreach (['xlsx', 'xls', 'html', 'htm'] as $ext) {
+            $path = $uploadDir . '/' . $type . '.' . $ext;
+            if (is_file($path)) {
+                unlink($path);
+                $removed[] = 'templates/uploads/' . $type . '.' . $ext;
+            }
+        }
+
+        try {
+            $pdo->prepare('DELETE FROM report_templates WHERE report_type = ?')->execute([$type]);
+        } catch (Throwable) {
+            // Table may not exist on older installs
+        }
+
+        jsonResponse([
+            'message' => $type . ' template cleared. You can upload a new Excel file with formulas.',
+            'removed' => $removed,
+            'templates' => getTemplateStatus(),
+        ]);
     }
 
     if ($action === 'delete') {
