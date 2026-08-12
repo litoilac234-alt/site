@@ -44,6 +44,7 @@ export function deriveBarChartFromPdm(
     startDay: (a.es ?? 0) + 1,
     endDay: Math.max((a.es ?? 0) + 1, a.ef ?? a.duration),
     actualEndDay: actualByName.get(a.name),
+    isCritical: !!a.isCritical,
   }));
 
   const projectDuration = Math.max(...scheduled.map((a) => a.ef ?? 0), 0);

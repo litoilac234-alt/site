@@ -132,6 +132,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
             'startDay' => $t['startDay'],
             'endDay' => $t['endDay'],
             'actualEndDay' => $t['actualEndDay'],
+            'isCritical' => !empty($t['isCritical']),
         ];
     }
     $totalDaysFromPdm = max(1, (int)($pdm['projectDuration'] ?? 0));

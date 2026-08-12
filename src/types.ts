@@ -107,6 +107,8 @@ export interface BarChartTask {
   startDay: number;
   endDay: number;
   actualEndDay?: number | null;
+  /** True when total float is zero (LF−EF = 0 and LS−ES = 0). */
+  isCritical?: boolean;
 }
 
 export interface SCurvePoint {

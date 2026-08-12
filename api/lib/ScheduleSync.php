@@ -23,6 +23,7 @@ class ScheduleSync
                 'startDay' => $es + 1,
                 'endDay' => max($es + 1, $ef),
                 'actualEndDay' => $actualEndByName[$name] ?? null,
+                'isCritical' => !empty($a['isCritical']),
             ];
         }
         return $tasks;

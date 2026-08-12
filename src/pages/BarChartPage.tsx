@@ -90,8 +90,8 @@ export function BarChartPage() {
           </span>
           <h1 className="mt-3 text-2xl font-bold text-text">Construction Schedule Bar Chart</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
-            Tasks are generated automatically from the PDM schedule. Actual progress and the
-            time-now line update automatically from weekly SWA, STEWA, and IAR entries.
+            Tasks come from the PDM schedule (including Early Start). Critical-path activities
+            (LF−EF = 0 and LS−ES = 0) are outlined in red — same rule as the PDM diagram.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -121,6 +121,9 @@ export function BarChartPage() {
         </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-6 rounded bg-blue-600" /> Target Plan (not started)
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded border-2 border-red-600 bg-blue-600" /> Critical path
         </span>
       </div>
 
@@ -160,10 +163,21 @@ export function BarChartPage() {
                 const hasActual = task.actualEndDay != null;
                 const status = getScheduleStatus(task.endDay, task.actualEndDay, timeNow);
                 const plannedSpan = Math.max(0, task.endDay - task.startDay + 1);
+                const critical = !!task.isCritical;
                 return (
-                  <tr key={task.id} className="border-b border-border/50">
+                  <tr
+                    key={task.id}
+                    className={`border-b border-border/50 ${critical ? 'bg-red-50/60' : ''}`}
+                  >
                     <td className="p-2 text-text-muted">{task.index}</td>
-                    <td className="p-2 font-medium text-text">{task.name}</td>
+                    <td className={`p-2 font-medium ${critical ? 'text-red-700' : 'text-text'}`}>
+                      {task.name}
+                      {critical ? (
+                        <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-red-600">
+                          Critical
+                        </span>
+                      ) : null}
+                    </td>
                     {days.map((d) => {
                       const inPlanned = d >= task.startDay && d <= task.endDay;
                       const isBarStart = d === task.startDay;
@@ -187,10 +201,10 @@ export function BarChartPage() {
                             <div
                               className={`h-4 w-full rounded-sm ${
                                 hasActual ? STATUS_COLORS[status] : STATUS_COLORS.planned
-                              }`}
+                              } ${critical ? 'ring-2 ring-red-600 ring-offset-1' : ''}`}
                               title={`Days ${task.startDay}–${task.endDay}${
                                 hasActual ? ` · actual end ${task.actualEndDay}` : ' · Target Plan'
-                              }`}
+                              }${critical ? ' · Critical path' : ''}`}
                             />
                           </td>
                         );
