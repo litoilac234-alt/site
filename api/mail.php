@@ -78,7 +78,7 @@ function emailsForRoles(PDO $pdo, array $roles): array
     }
     $placeholders = implode(',', array_fill(0, count($roles), '?'));
     $stmt = $pdo->prepare(
-        "SELECT DISTINCT email FROM users WHERE is_active = 1 AND role IN ({$placeholders}) ORDER BY role, email"
+        "SELECT DISTINCT email, role FROM users WHERE is_active = 1 AND role IN ({$placeholders}) ORDER BY role, email"
     );
     $stmt->execute(array_values($roles));
     $emails = [];
