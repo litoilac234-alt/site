@@ -212,8 +212,13 @@ export function ScheduleEditorPage() {
           {tab === 'pdm' && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-semibold text-text">Activities</h2>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-semibold text-text">Activities</h2>
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      Use <strong>Early Start (ES)</strong> para magsabay ang activities (parallel).
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
@@ -233,8 +238,11 @@ export function ScheduleEditorPage() {
                       <th className="py-2 pr-2">No.</th>
                       <th className="py-2 pr-2">Name</th>
                       <th className="py-2 pr-2">Duration</th>
-                      <th className="py-2 pr-2" title="Optional Early Start day. Leave blank for formula. Set 1 on multiple activities to start them in parallel on Day 1.">
-                        ES
+                      <th
+                        className="py-2 pr-2 text-primary"
+                        title="Optional Early Start day. Leave blank for formula. Set 1 on multiple activities to start them in parallel on Day 1."
+                      >
+                        Early Start (ES)
                       </th>
                       <th className="py-2" />
                     </tr>
@@ -284,7 +292,7 @@ export function ScheduleEditorPage() {
                               }}
                               placeholder="auto"
                               title="Early Start day (1 = Day 1). Leave blank to use the normal ES formula."
-                              className="w-14 rounded border border-border px-2 py-1"
+                              className="w-16 rounded border border-primary/40 bg-primary-light/30 px-2 py-1"
                             />
                             <span className="whitespace-nowrap text-[10px] text-text-muted">
                               → Day {(a.es ?? 0) + 1}
@@ -312,10 +320,11 @@ export function ScheduleEditorPage() {
                     ))}
                   </tbody>
                 </table>
-                <p className="mt-3 text-xs text-text-muted">
-                  Early Start (ES): leave blank to keep the normal formula. To run activities in
-                  parallel (e.g. Reinforcing and Concrete Pouring), set the same ES day on each —
-                  use <strong>1</strong> to start all of them on Day 1.
+                <p className="mt-3 rounded-lg border border-primary/20 bg-primary-light/40 px-3 py-2 text-xs text-text-muted">
+                  <strong className="text-text">Early Start (ES):</strong> blank = normal formula
+                  (retain). Para magsabay ang activities (hal. Reinforcing at Buhos), ilagay ang
+                  parehong ES — <strong className="text-text">1</strong> = lahat magsisimula sa Day
+                  1, parallel sa bar chart.
                 </p>
               </div>
 

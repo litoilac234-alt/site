@@ -106,7 +106,7 @@ export interface BarChartTask {
   name: string;
   startDay: number;
   endDay: number;
-  actualEndDay?: number;
+  actualEndDay?: number | null;
 }
 
 export interface SCurvePoint {
