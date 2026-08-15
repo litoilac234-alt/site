@@ -8,7 +8,7 @@ import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import { getSchedule, saveSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
-import type { DependencyType, PdmActivity } from '../types';
+import { buildRoadPdmSample } from '../data/roadPdmSample';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
 
@@ -219,6 +219,7 @@ export function ScheduleEditorPage() {
                       Use <strong>Early Start (ES)</strong> para magsabay ang activities (parallel).
                     </p>
                   </div>
+                  <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() =>
@@ -231,6 +232,28 @@ export function ScheduleEditorPage() {
                   >
                     + Add activity
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          'Replace the current activities with the road project PDM (billboard, mobilization, PCCP, etc.)?',
+                        )
+                      ) {
+                        return;
+                      }
+                      const sample = buildRoadPdmSample();
+                      patchSchedule((d) => ({
+                        ...d,
+                        activities: sample.activities,
+                        dependencies: sample.dependencies,
+                      }));
+                    }}
+                    className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary"
+                  >
+                    Load road PDM sample
+                  </button>
+                  </div>
                 </div>
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -254,7 +277,7 @@ export function ScheduleEditorPage() {
                           <input
                             value={a.number}
                             onChange={(e) => updateActivity(a.id, { number: e.target.value })}
-                            className="w-12 rounded border border-border px-2 py-1"
+                            className="w-24 rounded border border-border px-2 py-1"
                           />
                         </td>
                         <td className="py-2 pr-2">

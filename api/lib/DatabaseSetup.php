@@ -131,7 +131,7 @@ class DatabaseSetup
             CREATE TABLE IF NOT EXISTS pdm_activities (
               id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               project_id INT UNSIGNED NOT NULL,
-              activity_number VARCHAR(20) NOT NULL,
+              activity_number VARCHAR(40) NOT NULL,
               activity_name VARCHAR(255) NOT NULL,
               duration INT UNSIGNED NOT NULL DEFAULT 1,
               es_override INT UNSIGNED NULL,
@@ -149,6 +149,11 @@ class DatabaseSetup
             $pdo->exec('ALTER TABLE pdm_activities ADD COLUMN es_override INT UNSIGNED NULL AFTER duration');
         } catch (\Throwable) {
             // Column already exists on upgraded databases
+        }
+        try {
+            $pdo->exec('ALTER TABLE pdm_activities MODIFY activity_number VARCHAR(40) NOT NULL');
+        } catch (\Throwable) {
+            // Ignore if the column is already wide enough
         }
 
         $pdo->exec("
@@ -196,61 +201,96 @@ class DatabaseSetup
     public static function seedScheduleIfEmpty(PDO $pdo): void
     {
         $count = (int)$pdo->query('SELECT COUNT(*) FROM pdm_activities WHERE project_id=1')->fetchColumn();
-        if ($count > 0) {
+        $placeholder = (int)$pdo->query(
+            "SELECT COUNT(*) FROM pdm_activities WHERE project_id=1 AND activity_name IN ('Activity A','Activity B')"
+        )->fetchColumn();
+        if ($count > 0 && $placeholder === 0) {
             return;
         }
 
-        $acts = [
-            ['A', 'Activity A', 3, 120, 80],
-            ['B', 'Activity B', 4, 280, 80],
-            ['C', 'Activity C', 5, 440, 80],
-            ['D', 'Activity D', 2, 120, 220],
-            ['E', 'Activity E', 6, 280, 220],
-            ['F', 'Activity F', 3, 440, 220],
-        ];
+        if ($count > 0) {
+            $pdo->prepare('DELETE FROM pdm_dependencies WHERE project_id = 1')->execute();
+            $pdo->prepare('DELETE FROM pdm_activities WHERE project_id = 1')->execute();
+            $pdo->prepare('DELETE FROM bar_chart_tasks WHERE project_id = 1')->execute();
+            $pdo->prepare('DELETE FROM schedule_settings WHERE project_id = 1')->execute();
+        }
+
+        self::insertRoadPdm($pdo, 1);
+    }
+
+    public static function insertRoadPdm(PDO $pdo, int $projectId): void
+    {
         $ids = [];
         $stmt = $pdo->prepare(
-            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, pos_x, pos_y) VALUES (1,?,?,?,?,?)'
+            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, pos_x, pos_y)
+             VALUES (?,?,?,?,?,?)'
         );
-        foreach ($acts as $a) {
-            $stmt->execute($a);
-            $ids[$a[0]] = (int)$pdo->lastInsertId();
+        foreach (RoadPdmSample::activities() as $i => $a) {
+            $stmt->execute([
+                $projectId,
+                $a['number'],
+                $a['name'],
+                $a['duration'],
+                120 + ($i % 4) * 180,
+                80 + intdiv($i, 4) * 140,
+            ]);
+            $ids[$a['key']] = (int)$pdo->lastInsertId();
         }
 
-        $deps = [
-            [$ids['A'], $ids['B'], 'FS', 0],
-            [$ids['B'], $ids['C'], 'FS', 0],
-            [$ids['D'], $ids['E'], 'FS', 0],
-            [$ids['E'], $ids['F'], 'FS', 0],
-            [$ids['D'], $ids['C'], 'FS', 0],
-        ];
         $depStmt = $pdo->prepare(
-            'INSERT INTO pdm_dependencies (project_id, from_activity_id, to_activity_id, dependency_type, lag_days) VALUES (1,?,?,?,?)'
+            'INSERT INTO pdm_dependencies (project_id, from_activity_id, to_activity_id, dependency_type, lag_days)
+             VALUES (?,?,?,?,?)'
         );
-        foreach ($deps as $d) {
-            $depStmt->execute($d);
+        foreach (RoadPdmSample::dependencies() as $d) {
+            $from = $ids[$d['from']] ?? 0;
+            $to = $ids[$d['to']] ?? 0;
+            if (!$from || !$to) {
+                continue;
+            }
+            $depStmt->execute([$projectId, $from, $to, $d['type'], $d['lag']]);
         }
 
-        $tasks = [
-            [2, 'SITE PREPARATION', 1, 5, 5],
-            [3, 'FOOTINGS', 6, 10, 11],
-            [4, 'FOUNDATIONS', 11, 15, 15],
-            [5, 'TEMPORARY ELECTRIC SERVICE', 1, 1, 1],
-            [6, 'WATER AND SEWER TAP', 6, 8, 8],
-            [7, 'SOIL TREATMENT', 11, 11, 12],
-            [8, 'FRAMING', 16, 20, 18],
-            [10, 'ROOF, WINDOWS, EXTERIOR DOORS', 23, 24, null],
-        ];
+        $pdmInput = [];
+        $actRows = $pdo->prepare(
+            'SELECT id, activity_number AS number, activity_name AS name, duration FROM pdm_activities WHERE project_id = ? ORDER BY id'
+        );
+        $actRows->execute([$projectId]);
+        foreach ($actRows->fetchAll() as $row) {
+            $pdmInput[] = [
+                'id' => (string)$row['id'],
+                'number' => $row['number'],
+                'name' => $row['name'],
+                'duration' => (int)$row['duration'],
+            ];
+        }
+        $dbDeps = $pdo->prepare(
+            'SELECT from_activity_id AS fromId, to_activity_id AS toId, dependency_type AS type, lag_days AS `lag`
+             FROM pdm_dependencies WHERE project_id = ?'
+        );
+        $dbDeps->execute([$projectId]);
+        $depRows = [];
+        foreach ($dbDeps->fetchAll() as $row) {
+            $depRows[] = [
+                'fromId' => (string)$row['fromId'],
+                'toId' => (string)$row['toId'],
+                'type' => $row['type'],
+                'lag' => (int)$row['lag'],
+            ];
+        }
+        $pdm = PdmSchedule::calculate($pdmInput, $depRows);
+        $tasks = ScheduleSync::barChartFromPdm($pdm['activities'] ?? []);
         $taskStmt = $pdo->prepare(
-            'INSERT INTO bar_chart_tasks (project_id, task_index, task_name, start_day, end_day, actual_end_day) VALUES (1,?,?,?,?,?)'
+            'INSERT INTO bar_chart_tasks (project_id, task_index, task_name, start_day, end_day, actual_end_day)
+             VALUES (?,?,?,?,?,NULL)'
         );
         foreach ($tasks as $t) {
-            $taskStmt->execute($t);
+            $taskStmt->execute([$projectId, $t['index'], $t['name'], $t['startDay'], $t['endDay']]);
         }
 
+        $duration = max(1, (int)($pdm['projectDuration'] ?? 110));
         $pdo->prepare(
-            'INSERT INTO schedule_settings (project_id, bar_chart_total_days, bar_chart_time_now) VALUES (1, 24, 10)'
-        )->execute();
+            'INSERT INTO schedule_settings (project_id, bar_chart_total_days, bar_chart_time_now) VALUES (?,?,10)'
+        )->execute([$projectId, $duration]);
     }
 
     public static function seedDemoReportsIfEmpty(PDO $pdo): void

@@ -89,7 +89,7 @@ export function PdmNode({ activity, x, y }: PdmNodeProps) {
         EF
       </text>
       <text x={w / 6} y={24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.es ?? '—'}
+        {activity.es == null ? '—' : activity.es + 1}
       </text>
       <text x={w / 2} y={24} textAnchor="middle" className="fill-text text-[11px] font-bold">
         {activity.number}
@@ -123,7 +123,7 @@ export function PdmNode({ activity, x, y }: PdmNodeProps) {
         LF
       </text>
       <text x={w / 6} y={row2 + 26} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.ls ?? '—'}
+        {activity.ls == null ? '—' : activity.ls + 1}
       </text>
       <text x={w / 2} y={row2 + 26} textAnchor="middle" className="fill-text text-[10px] font-semibold">
         {activity.duration}

@@ -39,7 +39,7 @@ function layoutByEarlyStart(activities: PdmActivity[]): Record<string, { x: numb
 }
 
 function diagramBounds(positions: Record<string, { x: number; y: number }>) {
-  const pad = 56;
+  const pad = 72;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -183,12 +183,10 @@ export function PdmPage() {
           <div className="overflow-x-auto rounded-2xl border border-border bg-card p-6 shadow-sm">
             <svg
               viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
-              className="mx-auto w-full min-h-[280px] max-w-4xl"
-              preserveAspectRatio="xMidYMid meet"
+              className="min-h-[280px]"
+              style={{ width: Math.max(bounds.w, 640), height: Math.max(bounds.h, 280) }}
+              preserveAspectRatio="xMinYMin meet"
             >
-              <text x={bounds.x + bounds.w - 48} y={bounds.y + 24} className="fill-text-muted text-[11px]">
-                Finish
-              </text>
 
               <defs>
                 <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -233,6 +231,45 @@ export function PdmPage() {
                       className="fill-text text-[10px] font-semibold"
                     >
                       Start
+                    </text>
+                  </g>
+                );
+              })()}
+
+              {(() => {
+                const projectEnd = Math.max(0, ...activities.map((a) => a.ef ?? 0));
+                const group = activities.filter((a) => (a.ef ?? 0) === projectEnd);
+                const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
+                const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
+                if (ys.length === 0 || xs.length === 0) return null;
+                const x = Math.max(...xs) + NODE_HALF_W + 18;
+                const y1 = Math.min(...ys);
+                const y2 = Math.max(...ys);
+                return (
+                  <g key="project-end">
+                    <line x1={x} y1={y1} x2={x} y2={y2} stroke="#2c2c2a" strokeWidth={2.5} />
+                    {group.map((a) => {
+                      const pos = positions[a.id];
+                      if (!pos) return null;
+                      return (
+                        <line
+                          key={`end-branch-${a.id}`}
+                          x1={pos.x + NODE_HALF_W}
+                          y1={pos.y}
+                          x2={x}
+                          y2={pos.y}
+                          stroke="#2c2c2a"
+                          strokeWidth={1.75}
+                        />
+                      );
+                    })}
+                    <text
+                      x={x}
+                      y={y1 - 14}
+                      textAnchor="middle"
+                      className="fill-text text-[10px] font-semibold"
+                    >
+                      End
                     </text>
                   </g>
                 );
@@ -336,9 +373,9 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
-                      <td>{a.es}</td>
+                      <td>{a.es == null ? '—' : a.es + 1}</td>
                       <td>{a.ef}</td>
-                      <td>{a.ls}</td>
+                      <td>{a.ls == null ? '—' : a.ls + 1}</td>
                       <td>{a.lf}</td>
                       <td>{floatEf}</td>
                       <td>{floatEs}</td>
