@@ -14,6 +14,14 @@ if ($uri !== '/' && is_file($path)) {
     return false; // built-in server serves the static file
 }
 
+// Missing storage files must not fall through to the SPA landing page.
+if (str_starts_with($uri, '/storage/')) {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'File not found';
+    return true;
+}
+
 // /api/foo.php style routes
 if (preg_match('#^/api/([A-Za-z0-9_\-]+\.php)$#', $uri, $m)) {
     $script = __DIR__ . '/api/' . $m[1];

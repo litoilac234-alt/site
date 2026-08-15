@@ -4,6 +4,7 @@ import { Logo } from '../components/Logo';
 import { useAuth } from '../context/AuthContext';
 import { trackReportViewed } from '../lib/recentViewed';
 import { getReport } from '../lib/swaStewaApi';
+import { apiUrl } from '../lib/paths';
 
 export function PublicReportViewPage() {
   const { reportNumber } = useParams<{ reportNumber: string }>();
@@ -20,7 +21,12 @@ export function PublicReportViewPage() {
       .then((res) => {
         setValid(res.valid !== false);
         setVerified(!!res.verified);
-        setPdfUrl(res.pdf_url ?? '');
+        setPdfUrl(
+          res.pdf_url
+          || (res.verified
+            ? apiUrl('swa_stewa.php', `action=pdf&report_number=${encodeURIComponent(reportNumber)}`)
+            : ''),
+        );
         setReport(res.report as unknown as Record<string, unknown>);
         const id = (res.report as { id?: number } | undefined)?.id;
         if (typeof id === 'number') trackReportViewed(id);

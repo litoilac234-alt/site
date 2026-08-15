@@ -280,19 +280,57 @@ if ($method === 'GET') {
         ]);
     }
 
+    if ($action === 'pdf') {
+        $num = trim((string)($_GET['report_number'] ?? ''));
+        $report = getReport($pdo, $num);
+        if (!$report) {
+            jsonError('Record Not Found', 404);
+        }
+        if (!in_array((string)$report['status'], ['approved', 'generated'], true)) {
+            jsonError('Official PDF is available after approval.', 403);
+        }
+
+        $rel = (string)($report['pdf_file'] ?? ('storage/reports/' . $report['report_number'] . '.pdf'));
+        $abs = dirname(__DIR__) . '/' . ltrim($rel, '/');
+        if (!is_file($abs)) {
+            try {
+                $files = generateOfficialPdf($report);
+                $rel = $files['pdf'];
+                $abs = dirname(__DIR__) . '/' . $rel;
+                $pdo->prepare('UPDATE swa_stewa_reports SET pdf_file=?, generated_at=COALESCE(generated_at, NOW()) WHERE id=?')
+                    ->execute([$rel, (int)$report['id']]);
+            } catch (Throwable $e) {
+                jsonError('Could not generate PDF: ' . $e->getMessage(), 500);
+            }
+        }
+        if (!is_file($abs)) {
+            jsonError('PDF file is missing.', 404);
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . basename($abs) . '"');
+        header('Content-Length: ' . (string)filesize($abs));
+        header('Cache-Control: private, max-age=60');
+        readfile($abs);
+        exit;
+    }
+
     if ($action === 'view' || isset($_GET['report_number'])) {
         $num = $_GET['report_number'] ?? '';
         $report = getReport($pdo, $num);
         if (!$report) {
             jsonResponse(['valid' => false, 'message' => 'Record Not Found'], 404);
         }
+        $verified = in_array($report['status'], ['approved', 'generated'], true);
+        $pdfUrl = $verified
+            ? APP_URL . '/api/swa_stewa.php?action=pdf&report_number=' . rawurlencode((string)$report['report_number'])
+                . '&v=' . rawurlencode((string)($report['updated_at'] ?? $report['generated_at'] ?? time()))
+            : null;
         jsonResponse([
             'valid' => true,
-            'verified' => in_array($report['status'], ['approved', 'generated'], true),
+            'verified' => $verified,
             'report' => $report,
-            'pdf_url' => $report['pdf_file']
-                ? APP_URL . '/' . $report['pdf_file'] . '?v=' . rawurlencode((string)($report['updated_at'] ?? $report['generated_at'] ?? time()))
-                : null,
+            'pdf_url' => $pdfUrl,
             'public_url' => $report['public_url'],
         ]);
     }
