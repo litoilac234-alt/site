@@ -64,23 +64,25 @@ class ReportTemplateRenderer
         }
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 
-        // Dompdf does not reliably support WebP — convert to PNG.
-        if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
-            $img = @imagecreatefromwebp($path);
-            if ($img !== false) {
-                ob_start();
-                imagepng($img);
-                $png = (string)ob_get_clean();
-                imagedestroy($img);
-                if ($png !== '') {
-                    return 'data:image/png;base64,' . base64_encode($png);
+        // Dompdf cannot render WebP unless GD/Imagick can convert it first.
+        if ($ext === 'webp') {
+            if (function_exists('imagecreatefromwebp')) {
+                $img = @imagecreatefromwebp($path);
+                if ($img !== false) {
+                    ob_start();
+                    imagepng($img);
+                    $png = (string)ob_get_clean();
+                    imagedestroy($img);
+                    if ($png !== '') {
+                        return 'data:image/png;base64,' . base64_encode($png);
+                    }
                 }
             }
+            return '';
         }
 
         $mime = match ($ext) {
             'png' => 'image/png',
-            'webp' => 'image/webp',
             'jpeg', 'jpg' => 'image/jpeg',
             default => 'image/jpeg',
         };
