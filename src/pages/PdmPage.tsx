@@ -6,90 +6,53 @@ import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
 import { DEPENDENCY_LABELS } from '../lib/pdm';
-import { MilestoneNode, PDM_NODE_H, PDM_NODE_W, PdmNode, pdmCalendarDays } from '../components/PdmNode';
+import { PdmNode } from '../components/PdmNode';
 import type { PdmActivity, PdmDependency } from '../types';
 
-const NODE_HALF_W = PDM_NODE_W / 2;
-const NODE_HALF_H = PDM_NODE_H / 2;
-const COL_GAP = 210;
-const ROW_GAP = 110;
+const NODE_HALF_W = 60;
+const NODE_HALF_H = 45;
 
-function isSpanningActivity(a: PdmActivity, projectDuration: number): boolean {
-  const dur = a.duration ?? 0;
-  return (a.es ?? 0) === 0 && projectDuration > 0 && dur >= Math.max(20, projectDuration * 0.5);
-}
-
-/**
- * Sample PERT/CPM layout: START on the left, same-start activities stacked
- * (parallel), left→right by start day, long-running work on the top lane, END on the right.
- */
-function layoutLikeSample(
-  activities: PdmActivity[],
-  projectDuration: number,
-): Record<string, { x: number; y: number }> {
-  const spanning = activities.filter((a) => isSpanningActivity(a, projectDuration));
-  const rest = activities.filter((a) => !isSpanningActivity(a, projectDuration));
-
+/** Place activities that share the same ES in one column (parallel), left→right by ES. */
+function layoutByEarlyStart(activities: PdmActivity[]): Record<string, { x: number; y: number }> {
   const groups = new Map<number, PdmActivity[]>();
-  for (const a of rest) {
-    const startDay = pdmCalendarDays(a).startDay;
-    const list = groups.get(startDay) ?? [];
+  for (const a of activities) {
+    const es = a.es ?? 0;
+    const list = groups.get(es) ?? [];
     list.push(a);
-    groups.set(startDay, list);
+    groups.set(es, list);
   }
 
   const map: Record<string, { x: number; y: number }> = {};
-  const sortedStarts = [...groups.keys()].sort((a, b) => a - b);
-  const colCount = Math.max(1, sortedStarts.length);
-
-  spanning.forEach((a, i) => {
-    map[a.id] = {
-      x: 140 + Math.max(0, colCount - 1) * COL_GAP,
-      y: 70 + i * ROW_GAP,
-    };
-  });
-
-  const bodyTop = spanning.length > 0 ? 70 + spanning.length * ROW_GAP + 20 : 120;
-
-  sortedStarts.forEach((startDay, col) => {
-    const group = (groups.get(startDay) ?? []).sort((a, b) =>
+  const sortedEs = [...groups.keys()].sort((a, b) => a - b);
+  sortedEs.forEach((es, col) => {
+    const group = (groups.get(es) ?? []).sort((a, b) =>
       a.number.localeCompare(b.number, undefined, { numeric: true }),
     );
     group.forEach((a, row) => {
       map[a.id] = {
-        x: 140 + col * COL_GAP,
-        y: bodyTop + row * ROW_GAP,
+        x: 140 + col * 180,
+        y: 110 + row * 130,
       };
     });
   });
-
   return map;
 }
 
-function diagramBounds(
-  positions: Record<string, { x: number; y: number }>,
-  startPos: { x: number; y: number } | null,
-  endPos: { x: number; y: number } | null,
-) {
-  const pad = 72;
-  const pts = [
-    ...Object.values(positions),
-    ...(startPos ? [startPos] : []),
-    ...(endPos ? [endPos] : []),
-  ];
-  if (pts.length === 0) {
-    return { x: 0, y: 0, w: 560, h: 360 };
-  }
+function diagramBounds(positions: Record<string, { x: number; y: number }>) {
+  const pad = 56;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  pts.forEach((p) => {
+  Object.values(positions).forEach((p) => {
     minX = Math.min(minX, p.x - NODE_HALF_W);
     maxX = Math.max(maxX, p.x + NODE_HALF_W);
     minY = Math.min(minY, p.y - NODE_HALF_H);
     maxY = Math.max(maxY, p.y + NODE_HALF_H);
   });
+  if (!Number.isFinite(minX)) {
+    return { x: 0, y: 0, w: 560, h: 360 };
+  }
   return {
     x: minX - pad,
     y: minY - pad,
@@ -152,44 +115,20 @@ export function PdmPage() {
     };
   }, [projectId]);
 
-  const positions = useMemo(
-    () => layoutLikeSample(activities, projectDuration),
-    [activities, projectDuration],
-  );
+  const positions = useMemo(() => layoutByEarlyStart(activities), [activities]);
 
-  const predIds = useMemo(() => new Set(dependencies.map((d) => d.toId)), [dependencies]);
-  const succIds = useMemo(() => new Set(dependencies.map((d) => d.fromId)), [dependencies]);
-
-  const roots = useMemo(
-    () => activities.filter((a) => !predIds.has(a.id)),
-    [activities, predIds],
-  );
-  const leaves = useMemo(
-    () => activities.filter((a) => !succIds.has(a.id)),
-    [activities, succIds],
-  );
-
-  const startPos = useMemo(() => {
-    if (roots.length === 0) return null;
-    const ys = roots.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
-    const xs = roots.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
-    if (!ys.length || !xs.length) return null;
-    return { x: Math.min(...xs) - 150, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
-  }, [roots, positions]);
-
-  const endPos = useMemo(() => {
-    if (leaves.length === 0) return null;
-    const ys = leaves.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
-    const xs = leaves.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
-    if (!ys.length || !xs.length) return null;
-    return { x: Math.max(...xs) + 150, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
-  }, [leaves, positions]);
+  const parallelStart = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const a of activities) {
+      const es = a.es ?? 0;
+      counts.set(es, (counts.get(es) ?? 0) + 1);
+    }
+    return [...counts.entries()].filter(([, n]) => n > 1).map(([es]) => es);
+  }, [activities]);
 
   const criticalNumbers = criticalPath.join(' → ');
-  const bounds = useMemo(
-    () => diagramBounds(positions, startPos, endPos),
-    [positions, startPos, endPos],
-  );
+
+  const bounds = useMemo(() => diagramBounds(positions), [positions]);
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
@@ -197,14 +136,14 @@ export function PdmPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="inline-block rounded-full bg-primary-light px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
-            PERT / CPM
+            PDM Scheduling
           </span>
           <h1 className="mt-3 text-2xl font-bold text-text">Precedence Diagramming Method</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
-            Layout follows the sample PERT/CPM chart: <strong>START</strong> branches into
-            parallel Day-1 activities, boxes show <strong>start day | end day</strong>, and
-            Finish-to-Start work continues to <strong>END</strong>. Critical path (LF−EF = 0 and
-            LS−ES = 0) is highlighted in red.
+            Network diagram showing activity sequencing, dependencies (FS, SS, FF, SF), and
+            critical path. Critical when <strong>(LF − EF) = 0</strong> and{' '}
+            <strong>(LS − ES) = 0</strong> (red). Activities with the same Early Start are laid out
+            in parallel (same column), matching the bar chart.
           </p>
         </div>
         {user?.role === 'contractor' && (
@@ -248,54 +187,63 @@ export function PdmPage() {
           <div className="overflow-x-auto rounded-2xl border border-border bg-card p-6 shadow-sm">
             <svg
               viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
-              className="mx-auto min-h-[320px] w-full max-w-6xl"
+              className="mx-auto w-full min-h-[280px] max-w-4xl"
               preserveAspectRatio="xMidYMid meet"
             >
+              <text x={bounds.x + 16} y={bounds.y + 24} className="fill-text-muted text-[11px]">
+                Start
+              </text>
+              <text x={bounds.x + bounds.w - 48} y={bounds.y + 24} className="fill-text-muted text-[11px]">
+                Finish
+              </text>
+
               <defs>
                 <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6" fill="#2c2c2a" />
+                  <path d="M0,0 L6,3 L0,6" fill="#9ca89f" />
                 </marker>
                 <marker id="arrow-critical" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                   <path d="M0,0 L6,3 L0,6" fill="#dc2626" />
                 </marker>
               </defs>
 
-              {startPos &&
-                roots.map((a) => {
-                  const to = positions[a.id];
-                  if (!to) return null;
-                  const edge = dependencyEdge(startPos, to);
-                  return (
-                    <line
-                      key={`start-${a.id}`}
-                      x1={startPos.x + 44}
-                      y1={startPos.y}
-                      x2={edge.x2}
-                      y2={edge.y2}
-                      stroke="#2c2c2a"
-                      strokeWidth={1.5}
-                      markerEnd="url(#arrow)"
-                    />
-                  );
-                })}
-
-              {endPos &&
-                leaves.map((a) => {
-                  const from = positions[a.id];
-                  if (!from) return null;
-                  return (
-                    <line
-                      key={`end-${a.id}`}
-                      x1={from.x + NODE_HALF_W}
-                      y1={from.y}
-                      x2={endPos.x - 44}
-                      y2={endPos.y}
-                      stroke="#2c2c2a"
-                      strokeWidth={1.5}
-                      markerEnd="url(#arrow)"
-                    />
-                  );
-                })}
+              {/* Vertical Start spine for parallel activities (same ES), like Reinforcing || Buhos */}
+              {parallelStart.map((es) => {
+                const group = activities.filter((a) => (a.es ?? 0) === es);
+                const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
+                const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
+                if (ys.length < 2 || xs.length < 2) return null;
+                const x = Math.min(...xs) - NODE_HALF_W - 18;
+                const y1 = Math.min(...ys);
+                const y2 = Math.max(...ys);
+                return (
+                  <g key={`parallel-${es}`}>
+                    <line x1={x} y1={y1} x2={x} y2={y2} stroke="#2c2c2a" strokeWidth={2.5} />
+                    {group.map((a) => {
+                      const pos = positions[a.id];
+                      if (!pos) return null;
+                      return (
+                        <line
+                          key={`branch-${a.id}`}
+                          x1={x}
+                          y1={pos.y}
+                          x2={pos.x - NODE_HALF_W}
+                          y2={pos.y}
+                          stroke="#2c2c2a"
+                          strokeWidth={1.75}
+                        />
+                      );
+                    })}
+                    <text
+                      x={x}
+                      y={y1 - 14}
+                      textAnchor="middle"
+                      className="fill-text text-[10px] font-semibold"
+                    >
+                      Start
+                    </text>
+                  </g>
+                );
+              })}
 
               {dependencies.map((dep) => {
                 const from = positions[dep.fromId];
@@ -304,7 +252,7 @@ export function PdmPage() {
                 const isCritical =
                   !!activities.find((a) => a.id === dep.fromId)?.isCritical &&
                   !!activities.find((a) => a.id === dep.toId)?.isCritical;
-                const stroke = isCritical ? '#dc2626' : '#2c2c2a';
+                const stroke = isCritical ? '#dc2626' : '#9ca89f';
                 const edge = dependencyEdge(from, to);
                 if (edge.curved) {
                   return (
@@ -332,9 +280,6 @@ export function PdmPage() {
                 );
               })}
 
-              {startPos && <MilestoneNode label="START" x={startPos.x} y={startPos.y} />}
-              {endPos && <MilestoneNode label="END" x={endPos.x} y={endPos.y} />}
-
               {activities.map((act) => {
                 const pos = positions[act.id];
                 if (!pos) return null;
@@ -342,12 +287,18 @@ export function PdmPage() {
               })}
             </svg>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-text-muted">
-              <span>Each box: activity name · start day | end day</span>
               <span className="flex items-center gap-2">
                 <span className="inline-block h-0.5 w-6 bg-red-600" />
                 Critical path (LF−EF = 0 and LS−ES = 0)
               </span>
-              <span>Same start day = parallel (e.g. Billboard, Mobilization, Construction Safety)</span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-0.5 w-6 bg-[#9ca89f]" />
+                Non-critical dependency
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-3 w-0.5 bg-text" />
+                Parallel start (same Early Start / ES)
+              </span>
             </div>
           </div>
 
@@ -361,10 +312,6 @@ export function PdmPage() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 text-xs text-text-muted">
-                Finish-to-Start (FS): the next activity starts the day after the previous one
-                finishes (end day 10 → next start day 11), matching the sample chart.
-              </p>
             </div>
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <h3 className="font-semibold text-text">Activity Schedule Table</h3>
@@ -375,18 +322,19 @@ export function PdmPage() {
                     <th className="py-2">No.</th>
                     <th>Activity</th>
                     <th>D</th>
-                    <th>Start</th>
-                    <th>End</th>
                     <th>ES</th>
                     <th>EF</th>
                     <th>LS</th>
                     <th>LF</th>
+                    <th>LF−EF</th>
+                    <th>LS−ES</th>
                     <th>Critical</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activities.map((a) => {
-                    const { startDay, endDay } = pdmCalendarDays(a);
+                    const floatEf = (a.lf ?? 0) - (a.ef ?? 0);
+                    const floatEs = (a.ls ?? 0) - (a.es ?? 0);
                     return (
                     <tr
                       key={a.id}
@@ -395,12 +343,12 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
-                      <td>{startDay}</td>
-                      <td>{endDay}</td>
                       <td>{a.es}</td>
                       <td>{a.ef}</td>
                       <td>{a.ls}</td>
                       <td>{a.lf}</td>
+                      <td>{floatEf}</td>
+                      <td>{floatEs}</td>
                       <td className={a.isCritical ? 'font-semibold text-red-600' : ''}>
                         {a.isCritical ? 'Yes' : '—'}
                       </td>
