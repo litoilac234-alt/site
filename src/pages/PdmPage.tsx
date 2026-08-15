@@ -11,30 +11,77 @@ import type { PdmActivity, PdmDependency } from '../types';
 
 const NODE_HALF_W = 60;
 const NODE_HALF_H = 45;
+const COL_W = 200;
+const ROW_H = 150;
 
-/** Place activities that share the same ES in one column (parallel), left→right by ES. */
-function layoutByEarlyStart(activities: PdmActivity[]): Record<string, { x: number; y: number }> {
-  const groups = new Map<number, PdmActivity[]>();
-  for (const a of activities) {
-    const es = a.es ?? 0;
-    const list = groups.get(es) ?? [];
-    list.push(a);
-    groups.set(es, list);
+/** Place activities in columns by network rank (predecessors), like a paper PDM. */
+function layoutByNetworkRank(
+  activities: PdmActivity[],
+  dependencies: PdmDependency[],
+): Record<string, { x: number; y: number }> {
+  const ids = activities.map((a) => a.id);
+  const byId = new Map(activities.map((a) => [a.id, a]));
+  const preds = new Map<string, string[]>();
+  const succs = new Map<string, string[]>();
+  for (const id of ids) {
+    preds.set(id, []);
+    succs.set(id, []);
+  }
+  for (const d of dependencies) {
+    if (!preds.has(d.toId) || !succs.has(d.fromId)) continue;
+    preds.get(d.toId)!.push(d.fromId);
+    succs.get(d.fromId)!.push(d.toId);
+  }
+
+  const indeg = new Map(ids.map((id) => [id, preds.get(id)!.length]));
+  const queue = ids.filter((id) => indeg.get(id) === 0);
+  const rank = new Map<string, number>();
+  while (queue.length) {
+    const id = queue.shift()!;
+    const pRanks = preds.get(id)!.map((p) => rank.get(p) ?? 0);
+    rank.set(id, pRanks.length ? Math.max(...pRanks) + 1 : 0);
+    for (const s of succs.get(id)!) {
+      indeg.set(s, (indeg.get(s) ?? 1) - 1);
+      if (indeg.get(s) === 0) queue.push(s);
+    }
+  }
+  for (const id of ids) {
+    if (!rank.has(id)) rank.set(id, 0);
+  }
+
+  const layers = new Map<number, string[]>();
+  for (const id of ids) {
+    const r = rank.get(id) ?? 0;
+    const list = layers.get(r) ?? [];
+    list.push(id);
+    layers.set(r, list);
   }
 
   const map: Record<string, { x: number; y: number }> = {};
-  const sortedEs = [...groups.keys()].sort((a, b) => a - b);
-  sortedEs.forEach((es, col) => {
-    const group = (groups.get(es) ?? []).sort((a, b) =>
-      a.number.localeCompare(b.number, undefined, { numeric: true }),
-    );
-    group.forEach((a, row) => {
-      map[a.id] = {
-        x: 140 + col * 180,
-        y: 110 + row * 130,
-      };
+  const originX = 160;
+  const originY = 120;
+  const sortedRanks = [...layers.keys()].sort((a, b) => a - b);
+
+  for (const r of sortedRanks) {
+    const layer = layers.get(r)!;
+    layer.sort((a, b) => {
+      const predA = preds.get(a) ?? [];
+      const predB = preds.get(b) ?? [];
+      const avg = (predsOf: string[]) =>
+        predsOf.length
+          ? predsOf.reduce((sum, p) => sum + (map[p]?.y ?? originY), 0) / predsOf.length
+          : originY;
+      const ya = avg(predA);
+      const yb = avg(predB);
+      if (ya !== yb) return ya - yb;
+      const na = byId.get(a);
+      const nb = byId.get(b);
+      return (na?.number ?? '').localeCompare(nb?.number ?? '', undefined, { numeric: true });
     });
-  });
+    layer.forEach((id, row) => {
+      map[id] = { x: originX + r * COL_W, y: originY + row * ROW_H };
+    });
+  }
   return map;
 }
 
@@ -64,19 +111,17 @@ function diagramBounds(positions: Record<string, { x: number; y: number }>) {
 function dependencyEdge(
   from: { x: number; y: number },
   to: { x: number; y: number },
-): { d: string; x1: number; y1: number; x2: number; y2: number; curved: boolean } {
+): { d: string } {
   const x1 = from.x + NODE_HALF_W;
   const y1 = from.y;
   const x2 = to.x - NODE_HALF_W;
   const y2 = to.y;
-  const sameRow = Math.abs(from.y - to.y) < 40;
-  if (sameRow) {
-    return { d: '', x1, y1, x2, y2, curved: false };
+  if (Math.abs(y1 - y2) < 8 && x2 > x1) {
+    return { d: `M ${x1} ${y1} L ${x2} ${y2}` };
   }
-  const midX = (x1 + x2) / 2;
-  const bow = from.y < to.y ? 50 : -50;
-  const cY = (y1 + y2) / 2 + bow;
-  return { d: `M ${x1} ${y1} Q ${midX} ${cY} ${x2} ${y2}`, x1, y1, x2, y2, curved: true };
+  const stub = 18;
+  const midX = x2 > x1 ? Math.min(x1 + stub, (x1 + x2) / 2) : x1 + stub;
+  return { d: `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}` };
 }
 
 export function PdmPage() {
@@ -115,12 +160,20 @@ export function PdmPage() {
     };
   }, [projectId]);
 
-  const positions = useMemo(() => layoutByEarlyStart(activities), [activities]);
+  const positions = useMemo(
+    () => layoutByNetworkRank(activities, dependencies),
+    [activities, dependencies],
+  );
 
-  const projectStartEs = useMemo(() => {
-    if (activities.length === 0) return 0;
-    return Math.min(...activities.map((a) => a.es ?? 0));
-  }, [activities]);
+  const startActivities = useMemo(
+    () => activities.filter((a) => !dependencies.some((d) => d.toId === a.id)),
+    [activities, dependencies],
+  );
+
+  const endActivities = useMemo(
+    () => activities.filter((a) => !dependencies.some((d) => d.fromId === a.id)),
+    [activities, dependencies],
+  );
 
   const criticalNumbers = criticalPath.join(' → ');
 
@@ -138,8 +191,8 @@ export function PdmPage() {
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
             Network diagram showing activity sequencing, dependencies (FS, SS, FF, SF), and
             critical path. Critical when <strong>(LF − EF) = 0</strong> and{' '}
-            <strong>(LS − ES) = 0</strong> (red). Activities with the same Early Start are laid out
-            in parallel (same column), matching the bar chart.
+            <strong>(LS − ES) = 0</strong> (red). Boxes are laid out left to right in network
+            sequence from Start to End, like the paper PDM.
           </p>
         </div>
         {user?.role === 'contractor' && (
@@ -197,13 +250,12 @@ export function PdmPage() {
                 </marker>
               </defs>
 
-              {/* One project Start spine — only for activities that begin at the project start. */}
               {(() => {
-                const group = activities.filter((a) => (a.es ?? 0) === projectStartEs);
+                const group = startActivities;
                 const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
                 const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
                 if (ys.length === 0 || xs.length === 0) return null;
-                const x = Math.min(...xs) - NODE_HALF_W - 18;
+                const x = Math.min(...xs) - NODE_HALF_W - 28;
                 const y1 = Math.min(...ys);
                 const y2 = Math.max(...ys);
                 return (
@@ -237,12 +289,11 @@ export function PdmPage() {
               })()}
 
               {(() => {
-                const projectEnd = Math.max(0, ...activities.map((a) => a.ef ?? 0));
-                const group = activities.filter((a) => (a.ef ?? 0) === projectEnd);
+                const group = endActivities;
                 const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
                 const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
                 if (ys.length === 0 || xs.length === 0) return null;
-                const x = Math.max(...xs) + NODE_HALF_W + 18;
+                const x = Math.max(...xs) + NODE_HALF_W + 28;
                 const y1 = Math.min(...ys);
                 const y2 = Math.max(...ys);
                 return (
@@ -284,25 +335,11 @@ export function PdmPage() {
                   !!activities.find((a) => a.id === dep.toId)?.isCritical;
                 const stroke = isCritical ? '#dc2626' : '#9ca89f';
                 const edge = dependencyEdge(from, to);
-                if (edge.curved) {
-                  return (
-                    <path
-                      key={dep.id}
-                      d={edge.d}
-                      fill="none"
-                      stroke={stroke}
-                      strokeWidth={isCritical ? 3 : 1.5}
-                      markerEnd={isCritical ? 'url(#arrow-critical)' : 'url(#arrow)'}
-                    />
-                  );
-                }
                 return (
-                  <line
+                  <path
                     key={dep.id}
-                    x1={edge.x1}
-                    y1={edge.y1}
-                    x2={edge.x2}
-                    y2={edge.y2}
+                    d={edge.d}
+                    fill="none"
                     stroke={stroke}
                     strokeWidth={isCritical ? 3 : 1.5}
                     markerEnd={isCritical ? 'url(#arrow-critical)' : 'url(#arrow)'}
@@ -327,7 +364,7 @@ export function PdmPage() {
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block h-3 w-0.5 bg-text" />
-                Project Start (Day 1 activities)
+                Project Start (no predecessors)
               </span>
             </div>
           </div>
