@@ -131,7 +131,7 @@ class ReportTemplateRenderer
             . '</tr></table>';
 
         $pgcOnly = $pgc !== ''
-            ? '<div style="text-align:center;margin-bottom:6px"><img src="' . $pgc . '" width="56" height="56" style="width:56px;height:56px;border:0" /></div>'
+            ? '<img src="' . $pgc . '" width="48" height="48" style="width:48px;height:48px;border:0" />'
             : '';
 
         return [
@@ -211,13 +211,13 @@ class ReportTemplateRenderer
 
     public function renderIar(array $data, string $qrDataUri, bool $forPdf = true): string
     {
-        $accomplishmentItems = $data['accomplishment_items'] ?? [];
-        $variationItems = $data['variation_items'] ?? [];
-        $manpower = $data['manpower'] ?? [];
-        $equipment = $data['equipment'] ?? [];
+        $accomplishmentItems = array_slice(array_values($data['accomplishment_items'] ?? []), 0, 10);
+        $variationItems = array_slice(array_values($data['variation_items'] ?? []), 0, 4);
+        $manpower = array_slice(array_values($data['manpower'] ?? []), 0, 4);
+        $equipment = array_slice(array_values($data['equipment'] ?? []), 0, 4);
 
         $rows = '';
-        foreach ($this->padRows($accomplishmentItems, 19) as $item) {
+        foreach ($this->padRows($accomplishmentItems, 10) as $item) {
             $rows .= '<tr>';
             $rows .= '<td>' . htmlspecialchars((string)($item['item_no'] ?? $item['itemNo'] ?? '')) . '</td>';
             $rows .= '<td>' . htmlspecialchars((string)($item['description'] ?? '')) . '</td>';
@@ -229,7 +229,7 @@ class ReportTemplateRenderer
         }
 
         $variationRows = '';
-        foreach ($this->padRows($variationItems, 5) as $item) {
+        foreach ($this->padRows($variationItems, 4) as $item) {
             $variationRows .= '<tr>';
             $variationRows .= '<td>' . htmlspecialchars((string)($item['item_no'] ?? $item['itemNo'] ?? '')) . '</td>';
             $variationRows .= '<td>' . htmlspecialchars((string)($item['description'] ?? '')) . '</td>';
@@ -242,7 +242,7 @@ class ReportTemplateRenderer
         }
 
         $manpowerRows = '';
-        foreach ($this->padRows($manpower, 8) as $row) {
+        foreach ($this->padRows($manpower, 4) as $row) {
             $manpowerRows .= '<tr>';
             $manpowerRows .= '<td>' . htmlspecialchars((string)($row['description'] ?? '')) . '</td>';
             $manpowerRows .= '<td class="right">' . htmlspecialchars((string)($row['quantity'] ?? '')) . '</td>';
@@ -250,7 +250,7 @@ class ReportTemplateRenderer
         }
 
         $equipmentRows = '';
-        foreach ($this->padRows($equipment, 8) as $row) {
+        foreach ($this->padRows($equipment, 4) as $row) {
             $equipmentRows .= '<tr>';
             $equipmentRows .= '<td>' . htmlspecialchars((string)($row['description'] ?? '')) . '</td>';
             $equipmentRows .= '<td class="right">' . htmlspecialchars((string)($row['quantity'] ?? '')) . '</td>';
@@ -313,13 +313,13 @@ class ReportTemplateRenderer
     {
         $filtered = array_values(array_filter(array_map('strval', $lines), fn($l) => trim($l) !== ''));
         if ($filtered === []) {
-            return str_repeat('<p>&nbsp;</p>', 4);
+            return str_repeat('<p>&nbsp;</p>', 3);
         }
         $html = '';
         foreach ($filtered as $line) {
             $html .= '<p>' . htmlspecialchars($line) . '</p>';
         }
-        while (substr_count($html, '<p>') < 4) {
+        while (substr_count($html, '<p>') < 3) {
             $html .= '<p>&nbsp;</p>';
         }
         return $html;
