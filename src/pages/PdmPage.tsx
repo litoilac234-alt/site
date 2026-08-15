@@ -117,13 +117,9 @@ export function PdmPage() {
 
   const positions = useMemo(() => layoutByEarlyStart(activities), [activities]);
 
-  const parallelStart = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const a of activities) {
-      const es = a.es ?? 0;
-      counts.set(es, (counts.get(es) ?? 0) + 1);
-    }
-    return [...counts.entries()].filter(([, n]) => n > 1).map(([es]) => es);
+  const projectStartEs = useMemo(() => {
+    if (activities.length === 0) return 0;
+    return Math.min(...activities.map((a) => a.es ?? 0));
   }, [activities]);
 
   const criticalNumbers = criticalPath.join(' → ');
@@ -190,9 +186,6 @@ export function PdmPage() {
               className="mx-auto w-full min-h-[280px] max-w-4xl"
               preserveAspectRatio="xMidYMid meet"
             >
-              <text x={bounds.x + 16} y={bounds.y + 24} className="fill-text-muted text-[11px]">
-                Start
-              </text>
               <text x={bounds.x + bounds.w - 48} y={bounds.y + 24} className="fill-text-muted text-[11px]">
                 Finish
               </text>
@@ -206,17 +199,17 @@ export function PdmPage() {
                 </marker>
               </defs>
 
-              {/* Vertical Start spine for parallel activities (same ES), like Reinforcing || Buhos */}
-              {parallelStart.map((es) => {
-                const group = activities.filter((a) => (a.es ?? 0) === es);
+              {/* One project Start spine — only for activities that begin at the project start. */}
+              {(() => {
+                const group = activities.filter((a) => (a.es ?? 0) === projectStartEs);
                 const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
                 const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
-                if (ys.length < 2 || xs.length < 2) return null;
+                if (ys.length === 0 || xs.length === 0) return null;
                 const x = Math.min(...xs) - NODE_HALF_W - 18;
                 const y1 = Math.min(...ys);
                 const y2 = Math.max(...ys);
                 return (
-                  <g key={`parallel-${es}`}>
+                  <g key="project-start">
                     <line x1={x} y1={y1} x2={x} y2={y2} stroke="#2c2c2a" strokeWidth={2.5} />
                     {group.map((a) => {
                       const pos = positions[a.id];
@@ -243,7 +236,7 @@ export function PdmPage() {
                     </text>
                   </g>
                 );
-              })}
+              })()}
 
               {dependencies.map((dep) => {
                 const from = positions[dep.fromId];
@@ -297,7 +290,7 @@ export function PdmPage() {
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block h-3 w-0.5 bg-text" />
-                Parallel start (same Early Start / ES)
+                Project Start (Day 1 activities)
               </span>
             </div>
           </div>
