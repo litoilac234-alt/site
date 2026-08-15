@@ -9,6 +9,7 @@ import { getSchedule, saveSchedule, type ProjectSchedule } from '../lib/schedule
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
 import { buildRoadPdmSample } from '../data/roadPdmSample';
+import type { DependencyType, PdmActivity } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
 
