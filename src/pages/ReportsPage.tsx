@@ -73,27 +73,7 @@ export function ReportsPage() {
   const reportTitle = (r: SwaStewaReport) =>
     (r.report_data?.project_name as string) || r.project_name || `Project #${r.project_id}`;
 
-  const documentLinks = [
-    ...SCHEDULE_DOC_LINKS,
-    {
-      to: canUserCreateReportType(user?.role, 'SWA') ? '/swa-stewa/new/SWA' : '#stored-reports',
-      label: 'SWA',
-      desc: 'Summary of work accomplished',
-      icon: 'SWA',
-    },
-    {
-      to: canUserCreateReportType(user?.role, 'STEWA') ? '/swa-stewa/new/STEWA' : '#stored-reports',
-      label: 'STEWA',
-      desc: 'Time elapsed & work accomplished',
-      icon: 'STE',
-    },
-    {
-      to: '/swa-stewa',
-      label: 'IAR',
-      desc: 'Inspection reports by project & month',
-      icon: 'IAR',
-    },
-  ];
+  const documentLinks = SCHEDULE_DOC_LINKS;
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
