@@ -214,7 +214,8 @@ function generateOfficialPdf(array $report): array
     };
 
     $pdfPath = $basePath . '.pdf';
-    (new PdfReportService())->generateFromHtml($html, $pdfPath);
+    $orientation = $report['report_type'] === 'SWA' ? 'landscape' : 'portrait';
+    (new PdfReportService())->generateFromHtml($html, $pdfPath, $orientation);
     return ['pdf' => 'storage/reports/' . $reportNumber . '.pdf', 'xlsx' => $xlsxRel];
 }
 
