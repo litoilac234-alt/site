@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
+import { ReportProgressFeed, type ReportProgressEntry } from '../components/ReportProgressFeed';
 import { useSelectedProject } from '../context/SelectedProjectContext';
 import { getSCurve, type SCurveActivity } from '../lib/sCurveApi';
 import type { SCurvePoint } from '../types';
@@ -21,6 +22,9 @@ export function SCurvePage() {
   const [activities, setActivities] = useState<SCurveActivity[]>([]);
   const [criticalPath, setCriticalPath] = useState<string[]>([]);
   const [syncedFromPdm, setSyncedFromPdm] = useState(false);
+  const [reportFeed, setReportFeed] = useState<ReportProgressEntry[]>([]);
+  const [latestReportPercent, setLatestReportPercent] = useState<number | null>(null);
+  const [latestReportDate, setLatestReportDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,12 +35,18 @@ export function SCurvePage() {
         setActivities(res.activities);
         setCriticalPath(res.critical_path);
         setSyncedFromPdm(res.synced_from_pdm);
+        setReportFeed(res.report_feed ?? []);
+        setLatestReportPercent(res.latest_report_percent);
+        setLatestReportDate(res.latest_report_date);
       })
       .catch(() => {
         setPoints([]);
         setActivities([]);
         setCriticalPath([]);
         setSyncedFromPdm(false);
+        setReportFeed([]);
+        setLatestReportPercent(null);
+        setLatestReportDate(null);
       })
       .finally(() => setLoading(false));
   }, [projectId]);
@@ -58,7 +68,13 @@ export function SCurvePage() {
         <ProjectSelect value={projectId} onChange={setProjectId} className="min-w-[200px]" />
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <ReportProgressFeed
+        reports={reportFeed}
+        latestPercent={latestReportPercent}
+        latestDate={latestReportDate}
+      />
+
+      <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h3 className="text-center text-lg font-bold uppercase tracking-wide text-text">
           S-Curve Analysis — Progress
         </h3>

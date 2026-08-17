@@ -43,8 +43,7 @@ if ($method === 'GET') {
     $startDate = ScheduleSync::projectStartDate($pdo, $projectId);
     $preserved = ScheduleSync::loadPreservedActuals($pdo, $projectId);
 
-    // Actual progress recorded from weekly STEWA / IAR entries takes priority so the
-    // S-curve updates automatically whenever a report is added.
+    $reportFeed = ScheduleSync::reportProgressEntries($pdo, $projectId);
     $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);
     $actuals = $reportActuals + $preserved;
 
@@ -92,6 +91,9 @@ if ($method === 'GET') {
         'points' => formatScurvePoints($rawPoints),
         'activities' => $activities,
         'synced_from_pdm' => $scheduled !== [],
+        'report_feed' => $reportFeed,
+        'latest_report_percent' => $reportActuals !== [] ? (float)$reportActuals[array_key_last($reportActuals)] : null,
+        'latest_report_date' => $reportActuals !== [] ? array_key_last($reportActuals) : null,
     ]);
 }
 

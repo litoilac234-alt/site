@@ -108,22 +108,131 @@ class ScheduleSync
         $ordered = array_values($points);
         usort($ordered, static fn(array $a, array $b) => strcmp($a['point_date'], $b['point_date']));
 
-        return $ordered;
+        return self::forwardFillActualPoints($ordered, $preservedActual);
     }
 
     /**
-     * Actual progress points derived from SWA, STEWA, and IAR reports for a project,
-     * keyed by Y-m-d date. Later reports on the same date override earlier ones.
-     * This lets the S-curve and bar chart update automatically as weekly reports
-     * are added, without manual data entry.
+     * Carry the latest reported actual % forward so the S-curve line reflects SWA/STEWA/IAR
+     * progress between report dates.
      *
-     * @return array<string, float>
+     * @param array<int, array<string, mixed>> $points
+     * @param array<string, float> $reportActuals
+     * @return array<int, array<string, mixed>>
      */
-    public static function actualPointsFromReports(PDO $pdo, int $projectId): array
+    public static function forwardFillActualPoints(array $points, array $reportActuals): array
+    {
+        if ($reportActuals === []) {
+            return $points;
+        }
+
+        ksort($reportActuals);
+        $reportDates = array_keys($reportActuals);
+        $idx = 0;
+        $latest = null;
+        foreach ($points as &$point) {
+            $dateKey = (string)($point['point_date'] ?? '');
+            while ($idx < count($reportDates) && $reportDates[$idx] <= $dateKey) {
+                $latest = (float)$reportActuals[$reportDates[$idx]];
+                $idx++;
+            }
+            if ($latest !== null) {
+                $point['actual_pct'] = $latest;
+            }
+        }
+        unset($point);
+
+        return $points;
+    }
+
+    /**
+     * @return array{tasks: array<int, array<string, mixed>>, timeNow: int, latestPercent: float|null, latestReportDate: string|null}
+     */
+    public static function applyReportProgressToBarChart(
+        array $barChartTasks,
+        array $reportActuals,
+        string $projectStartDate,
+        int $totalDays,
+        int $defaultTimeNow = 10,
+    ): array {
+        $timeNow = max(1, min($totalDays, $defaultTimeNow));
+        $latestPercent = null;
+        $latestReportDate = null;
+
+        if ($reportActuals === []) {
+            return [
+                'tasks' => $barChartTasks,
+                'timeNow' => $timeNow,
+                'latestPercent' => null,
+                'latestReportDate' => null,
+            ];
+        }
+
+        $startTs = strtotime($projectStartDate) ?: time();
+        $latestDate = array_key_last($reportActuals);
+        $latestPercent = (float)$reportActuals[$latestDate];
+        $latestReportDate = (string)$latestDate;
+        $latestTs = strtotime($latestReportDate) ?: $startTs;
+        $elapsed = (int)floor(($latestTs - $startTs) / 86400) + 1;
+        $timeNow = min(max(1, $elapsed), max(1, $totalDays));
+
+        $achievedDays = (int)round(($latestPercent / 100) * max(1, $totalDays));
+        foreach ($barChartTasks as &$task) {
+            if (($task['actualEndDay'] ?? null) === null && (int)$task['endDay'] <= $achievedDays) {
+                $task['actualEndDay'] = (int)$task['endDay'];
+            }
+        }
+        unset($task);
+
+        return [
+            'tasks' => $barChartTasks,
+            'timeNow' => $timeNow,
+            'latestPercent' => $latestPercent,
+            'latestReportDate' => $latestReportDate,
+        ];
+    }
+
+    /**
+     * Parse report period / week fields into Y-m-d (week start when ISO week is used).
+     */
+    public static function parseReportDate(mixed $raw, string $fallbackCreatedAt = ''): ?string
+    {
+        $value = trim((string)$raw);
+        if ($value === '') {
+            $value = trim($fallbackCreatedAt);
+        }
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\d{4})-W(\d{1,2})$/i', $value, $m)) {
+            $dt = new \DateTimeImmutable('now');
+            $dt = $dt->setISODate((int)$m[1], (int)$m[2]);
+            return $dt->format('Y-m-d');
+        }
+
+        $ts = strtotime($value);
+        if ($ts !== false) {
+            return date('Y-m-d', $ts);
+        }
+
+        if ($fallbackCreatedAt !== '') {
+            $fallbackTs = strtotime($fallbackCreatedAt);
+            if ($fallbackTs !== false) {
+                return date('Y-m-d', $fallbackTs);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<array{reportNumber:string,reportType:string,date:string,percent:float,label:string,status:string}>
+     */
+    public static function reportProgressEntries(PDO $pdo, int $projectId): array
     {
         try {
             $stmt = $pdo->prepare(
-                "SELECT report_type, report_data, line_items, created_at
+                "SELECT report_number, report_type, report_data, line_items, status, created_at
                  FROM swa_stewa_reports
                  WHERE project_id = ?
                    AND report_type IN ('SWA', 'STEWA', 'IAR')
@@ -136,22 +245,22 @@ class ScheduleSync
             return [];
         }
 
-        $out = [];
+        $entries = [];
         foreach ($rows as $row) {
             $data = json_decode((string)($row['report_data'] ?? '{}'), true);
             if (!is_array($data)) {
                 $data = [];
             }
 
-            $rawDate = $data['report_date']
-                ?? $data['period_covered']
-                ?? $data['week_covered']
-                ?? $row['created_at'];
-            $ts = strtotime((string)$rawDate);
-            if ($ts === false) {
-                $ts = strtotime((string)$row['created_at']);
-            }
-            if ($ts === false) {
+            $date = self::parseReportDate(
+                $data['report_date']
+                    ?? $data['period_covered']
+                    ?? $data['week_covered']
+                    ?? $data['period']
+                    ?? null,
+                (string)$row['created_at'],
+            );
+            if ($date === null) {
                 continue;
             }
 
@@ -164,10 +273,35 @@ class ScheduleSync
                 continue;
             }
 
-            $out[date('Y-m-d', $ts)] = $pct;
+            $type = (string)$row['report_type'];
+            $entries[] = [
+                'reportNumber' => (string)$row['report_number'],
+                'reportType' => $type,
+                'date' => $date,
+                'percent' => $pct,
+                'label' => trim($type . ' · ' . (string)$row['report_number']),
+                'status' => (string)$row['status'],
+            ];
         }
 
-        ksort($out);
+        usort($entries, static fn(array $a, array $b) => [$a['date'], $a['reportNumber']] <=> [$b['date'], $b['reportNumber']]);
+        return $entries;
+    }
+
+    /**
+     * Actual progress points derived from SWA, STEWA, and IAR reports for a project,
+     * keyed by Y-m-d date. Later reports on the same date override earlier ones.
+     * This lets the S-curve and bar chart update automatically as weekly reports
+     * are added, without manual data entry.
+     *
+     * @return array<string, float>
+     */
+    public static function actualPointsFromReports(PDO $pdo, int $projectId): array
+    {
+        $out = [];
+        foreach (self::reportProgressEntries($pdo, $projectId) as $entry) {
+            $out[$entry['date']] = $entry['percent'];
+        }
         return $out;
     }
 
@@ -188,6 +322,7 @@ class ScheduleSync
             $pct = $data['actual_progress']
                 ?? $data['percent_actual']
                 ?? $data['percent_complete']
+                ?? $data['rev_target']
                 ?? null;
         } elseif ($reportType === 'SWA') {
             $totals = $data['computed_totals'] ?? null;
@@ -215,7 +350,15 @@ class ScheduleSync
             }
         }
 
-        if ($pct === null || $pct === '' || !is_numeric($pct)) {
+        if ($pct === null || $pct === '') {
+            return null;
+        }
+
+        if (is_string($pct)) {
+            $pct = str_replace(['%', ','], ['', ''], trim($pct));
+        }
+
+        if (!is_numeric($pct)) {
             return null;
         }
 
@@ -353,8 +496,10 @@ class ScheduleSync
         $scheduled = $pdmResult['activities'] ?? [];
         $duration = max(1, (int)($pdmResult['projectDuration'] ?? 0));
         $preserved = self::loadPreservedActuals($pdo, $projectId);
+        $reportActuals = self::actualPointsFromReports($pdo, $projectId);
+        $actuals = $reportActuals + $preserved;
         $startDate = self::projectStartDate($pdo, $projectId);
-        $points = self::sCurveFromPdm($scheduled, $startDate, $duration, $preserved);
+        $points = self::sCurveFromPdm($scheduled, $startDate, $duration, $actuals);
         self::saveSCurvePoints($pdo, $projectId, $points);
     }
 }

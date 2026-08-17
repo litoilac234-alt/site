@@ -1,4 +1,5 @@
 import type { BarChartTask, PdmActivity, PdmDependency } from '../types';
+import type { ReportProgressEntry } from '../components/ReportProgressFeed';
 import { apiFetch } from './http';
 import { apiUrl } from './paths';
 
@@ -14,6 +15,9 @@ export interface ProjectSchedule {
   projectDuration: number;
   criticalPath: string[];
   pdmError?: string | null;
+  reportFeed?: ReportProgressEntry[];
+  latestReportPercent?: number | null;
+  latestReportDate?: string | null;
 }
 
 async function request(url: string, options?: RequestInit) {

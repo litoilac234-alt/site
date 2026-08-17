@@ -139,27 +139,19 @@ function loadSchedule(PDO $pdo, int $projectId): array
     $barTotalDays = $totalDaysFromPdm ?: (int)$set['bar_chart_total_days'];
     $timeNow = (int)$set['bar_chart_time_now'];
 
-    // Auto-update the bar chart from weekly SWA / STEWA / IAR actual progress. The time-now
-    // line follows the latest report date, and tasks that should be complete for the
-    // achieved progress get an actual end day automatically (manual values are kept).
+    // Auto-update the bar chart from weekly SWA / STEWA / IAR actual progress.
+    $reportFeed = ScheduleSync::reportProgressEntries($pdo, $projectId);
     $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);
-    if ($reportActuals !== []) {
-        $startTs = strtotime(ScheduleSync::projectStartDate($pdo, $projectId)) ?: time();
-        $latestDate = array_key_last($reportActuals);
-        $latestPct = (float)$reportActuals[$latestDate];
-        $latestTs = strtotime((string)$latestDate) ?: $startTs;
-
-        $elapsed = (int)floor(($latestTs - $startTs) / 86400) + 1;
-        $timeNow = min(max(1, $elapsed), $barTotalDays);
-
-        $achievedDays = (int)round(($latestPct / 100) * $barTotalDays);
-        foreach ($barChartTasks as &$t) {
-            if ($t['actualEndDay'] === null && (int)$t['endDay'] <= $achievedDays) {
-                $t['actualEndDay'] = (int)$t['endDay'];
-            }
-        }
-        unset($t);
-    }
+    $startDate = ScheduleSync::projectStartDate($pdo, $projectId);
+    $applied = ScheduleSync::applyReportProgressToBarChart(
+        $barChartTasks,
+        $reportActuals,
+        $startDate,
+        $barTotalDays,
+        $timeNow,
+    );
+    $barChartTasks = $applied['tasks'];
+    $timeNow = $applied['timeNow'];
 
     return [
         'project_id' => $projectId,
@@ -172,6 +164,9 @@ function loadSchedule(PDO $pdo, int $projectId): array
         'criticalPath' => $pdm['criticalPath'] ?? [],
         'pdmError' => $pdm['error'] ?? null,
         'syncedFromPdm' => true,
+        'reportFeed' => $reportFeed,
+        'latestReportPercent' => $applied['latestPercent'],
+        'latestReportDate' => $applied['latestReportDate'],
     ];
 }
 
@@ -304,7 +299,17 @@ if ($method === 'POST' && $action === 'save') {
 
         $barChartTasks = ScheduleSync::barChartFromPdm($pdm['activities'], $actualByName);
         $totalDays = max(1, (int)($pdm['projectDuration'] ?? 1));
-        $timeNow = min(max(1, $timeNow), $totalDays);
+        $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);
+        $startDate = ScheduleSync::projectStartDate($pdo, $projectId);
+        $applied = ScheduleSync::applyReportProgressToBarChart(
+            $barChartTasks,
+            $reportActuals,
+            $startDate,
+            $totalDays,
+            $timeNow,
+        );
+        $barChartTasks = $applied['tasks'];
+        $timeNow = $applied['timeNow'];
 
         $taskStmt = $pdo->prepare(
             'INSERT INTO bar_chart_tasks (project_id, task_index, task_name, start_day, end_day, actual_end_day)

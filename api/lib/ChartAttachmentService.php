@@ -78,19 +78,25 @@ HTML;
 
     private static function sCurveHtml(PDO $pdo, int $projectId, string $projectName, string $week, string $reportNumber): string
     {
-        $stmt = $pdo->prepare(
-            'SELECT point_date, original_plan_pct, actual_pct FROM s_curve_points WHERE project_id = ? ORDER BY point_date'
-        );
-        $stmt->execute([$projectId]);
-        $rows = $stmt->fetchAll();
-        $body = '<table><thead><tr><th>Date</th><th>Target Plan %</th><th>Actual %</th></tr></thead><tbody>';
+        $pdm = ScheduleSync::loadPdmResult($pdo, $projectId);
+        $scheduled = $pdm['activities'] ?? [];
+        $duration = max(1, (int)($pdm['projectDuration'] ?? 0));
+        $startDate = ScheduleSync::projectStartDate($pdo, $projectId);
+        $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);
+        $preserved = ScheduleSync::loadPreservedActuals($pdo, $projectId);
+        $actuals = $reportActuals + $preserved;
+        $rows = $scheduled !== []
+            ? ScheduleSync::sCurveFromPdm($scheduled, $startDate, $duration, $actuals)
+            : [];
+        $body = '<table><thead><tr><th>Date</th><th>Target Plan %</th><th>Actual %</th><th>Label</th></tr></thead><tbody>';
         if (!$rows) {
-            $body .= '<tr><td colspan="3">No S-Curve data for this project yet.</td></tr>';
+            $body .= '<tr><td colspan="4">No S-Curve data for this project yet.</td></tr>';
         } else {
             foreach ($rows as $row) {
                 $body .= '<tr><td>' . htmlspecialchars((string)$row['point_date']) . '</td>'
                     . '<td>' . htmlspecialchars((string)($row['original_plan_pct'] ?? '—')) . '</td>'
-                    . '<td>' . htmlspecialchars((string)($row['actual_pct'] ?? '—')) . '</td></tr>';
+                    . '<td>' . htmlspecialchars((string)($row['actual_pct'] ?? '—')) . '</td>'
+                    . '<td>' . htmlspecialchars((string)($row['label'] ?? '')) . '</td></tr>';
             }
         }
         $body .= '</tbody></table>';
@@ -120,23 +126,31 @@ HTML;
 
     private static function barChartHtml(PDO $pdo, int $projectId, string $projectName, string $week, string $reportNumber): string
     {
-        $stmt = $pdo->prepare(
-            'SELECT task_name, start_day, end_day, actual_end_day FROM bar_chart_tasks WHERE project_id = ? ORDER BY task_index'
-        );
-        $stmt->execute([$projectId]);
-        $rows = $stmt->fetchAll();
+        $pdm = ScheduleSync::loadPdmResult($pdo, $projectId);
+        $scheduled = $pdm['activities'] ?? [];
+        $totalDays = max(1, (int)($pdm['projectDuration'] ?? 0));
+        $startDate = ScheduleSync::projectStartDate($pdo, $projectId);
+        $reportActuals = ScheduleSync::actualPointsFromReports($pdo, $projectId);
+        $tasks = ScheduleSync::barChartFromPdm($scheduled);
+        $applied = ScheduleSync::applyReportProgressToBarChart($tasks, $reportActuals, $startDate, $totalDays);
+        $rows = $applied['tasks'];
         $body = '<table><thead><tr><th>Task</th><th>Start day</th><th>Target end</th><th>Actual end</th></tr></thead><tbody>';
         if (!$rows) {
             $body .= '<tr><td colspan="4">No Bar Chart tasks for this project yet.</td></tr>';
         } else {
             foreach ($rows as $row) {
-                $body .= '<tr><td>' . htmlspecialchars((string)$row['task_name']) . '</td>'
-                    . '<td>' . htmlspecialchars((string)$row['start_day']) . '</td>'
-                    . '<td>' . htmlspecialchars((string)$row['end_day']) . '</td>'
-                    . '<td>' . htmlspecialchars((string)($row['actual_end_day'] ?? '—')) . '</td></tr>';
+                $body .= '<tr><td>' . htmlspecialchars((string)$row['name']) . '</td>'
+                    . '<td>' . htmlspecialchars((string)$row['startDay']) . '</td>'
+                    . '<td>' . htmlspecialchars((string)$row['endDay']) . '</td>'
+                    . '<td>' . htmlspecialchars((string)($row['actualEndDay'] ?? '—')) . '</td></tr>';
             }
         }
         $body .= '</tbody></table>';
+        if ($applied['latestPercent'] !== null) {
+            $body .= '<p><strong>Latest report actual:</strong> '
+                . htmlspecialchars((string)$applied['latestPercent']) . '%'
+                . ' · Time now day ' . htmlspecialchars((string)$applied['timeNow']) . '</p>';
+        }
         return self::wrap('Bar Chart Progress Report', $projectName, $week, $reportNumber, $body);
     }
 }

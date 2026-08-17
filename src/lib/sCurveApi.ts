@@ -1,5 +1,6 @@
 import { apiFetch } from './http';
 import { apiUrl } from './paths';
+import type { ReportProgressEntry } from '../components/ReportProgressFeed';
 import type { SCurvePoint } from '../types';
 
 export interface SCurveActivity {
@@ -21,5 +22,8 @@ export function getSCurve(projectId = 1) {
     points: SCurvePoint[];
     activities: SCurveActivity[];
     synced_from_pdm: boolean;
+    report_feed: ReportProgressEntry[];
+    latest_report_percent: number | null;
+    latest_report_date: string | null;
   }>(apiUrl('s_curve.php', `project_id=${projectId}`));
 }
