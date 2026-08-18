@@ -14,74 +14,58 @@ const NODE_HALF_H = 45;
 const COL_W = 200;
 const ROW_H = 150;
 
-/** Place activities in columns by network rank (predecessors), like a paper PDM. */
+/**
+ * Paper PDM lanes (both pages):
+ * 0 = Construction Safety (top)
+ * 1 = Billboard / field office
+ * 2 = Main earthworks → sub-base → unreinforced PCC
+ * 3 = Rebar / structural concrete → reinforced PCC
+ */
+function paperLane(activity: PdmActivity): number {
+  const n = activity.number;
+  const name = (activity.name ?? '').toLowerCase();
+  if (name.includes('safety') || name.includes('health program')) return 0;
+  if (n === 'B.5' || n.startsWith('A.1')) return 1;
+  if (n.startsWith('311(2)')) return 3;
+  if (n.startsWith('404') && activity.duration >= 20) return 3;
+  if (n === '404(1)b') return 3;
+  if (n.startsWith('405') && activity.duration >= 20) return 3;
+  return 2;
+}
+
+/** Columns by Early Start; rows by paper lanes so page-2 parallel paths stay separate. */
 function layoutByNetworkRank(
   activities: PdmActivity[],
-  dependencies: PdmDependency[],
+  _dependencies: PdmDependency[],
 ): Record<string, { x: number; y: number }> {
-  const ids = activities.map((a) => a.id);
-  const byId = new Map(activities.map((a) => [a.id, a]));
-  const preds = new Map<string, string[]>();
-  const succs = new Map<string, string[]>();
-  for (const id of ids) {
-    preds.set(id, []);
-    succs.set(id, []);
-  }
-  for (const d of dependencies) {
-    if (!preds.has(d.toId) || !succs.has(d.fromId)) continue;
-    preds.get(d.toId)!.push(d.fromId);
-    succs.get(d.fromId)!.push(d.toId);
-  }
-
-  const indeg = new Map(ids.map((id) => [id, preds.get(id)!.length]));
-  const queue = ids.filter((id) => indeg.get(id) === 0);
-  const rank = new Map<string, number>();
-  while (queue.length) {
-    const id = queue.shift()!;
-    const pRanks = preds.get(id)!.map((p) => rank.get(p) ?? 0);
-    rank.set(id, pRanks.length ? Math.max(...pRanks) + 1 : 0);
-    for (const s of succs.get(id)!) {
-      indeg.set(s, (indeg.get(s) ?? 1) - 1);
-      if (indeg.get(s) === 0) queue.push(s);
-    }
-  }
-  for (const id of ids) {
-    if (!rank.has(id)) rank.set(id, 0);
-  }
-
-  const layers = new Map<number, string[]>();
-  for (const id of ids) {
-    const r = rank.get(id) ?? 0;
-    const list = layers.get(r) ?? [];
-    list.push(id);
-    layers.set(r, list);
+  const groups = new Map<number, PdmActivity[]>();
+  for (const a of activities) {
+    const es = a.es ?? 0;
+    const list = groups.get(es) ?? [];
+    list.push(a);
+    groups.set(es, list);
   }
 
   const map: Record<string, { x: number; y: number }> = {};
   const originX = 160;
-  const originY = 120;
-  const sortedRanks = [...layers.keys()].sort((a, b) => a - b);
+  const originY = 110;
+  const sortedEs = [...groups.keys()].sort((a, b) => a - b);
 
-  for (const r of sortedRanks) {
-    const layer = layers.get(r)!;
-    layer.sort((a, b) => {
-      const predA = preds.get(a) ?? [];
-      const predB = preds.get(b) ?? [];
-      const avg = (predsOf: string[]) =>
-        predsOf.length
-          ? predsOf.reduce((sum, p) => sum + (map[p]?.y ?? originY), 0) / predsOf.length
-          : originY;
-      const ya = avg(predA);
-      const yb = avg(predB);
-      if (ya !== yb) return ya - yb;
-      const na = byId.get(a);
-      const nb = byId.get(b);
-      return (na?.number ?? '').localeCompare(nb?.number ?? '', undefined, { numeric: true });
-    });
-    layer.forEach((id, row) => {
-      map[id] = { x: originX + r * COL_W, y: originY + row * ROW_H };
-    });
-  }
+  sortedEs.forEach((es, col) => {
+    const group = groups.get(es) ?? [];
+    const usedY = new Map<number, number>();
+    group
+      .sort((a, b) => paperLane(a) - paperLane(b) || a.number.localeCompare(b.number, undefined, { numeric: true }))
+      .forEach((a) => {
+        const lane = paperLane(a);
+        const offset = usedY.get(lane) ?? 0;
+        usedY.set(lane, offset + 1);
+        map[a.id] = {
+          x: originX + col * COL_W,
+          y: originY + lane * ROW_H + offset * 28,
+        };
+      });
+  });
   return map;
 }
 
@@ -191,8 +175,8 @@ export function PdmPage() {
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
             Network diagram showing activity sequencing, dependencies (FS, SS, FF, SF), and
             critical path. Critical when <strong>(LF − EF) = 0</strong> and{' '}
-            <strong>(LS − ES) = 0</strong> (red). Boxes are laid out left to right in network
-            sequence from Start to End, like the paper PDM.
+            <strong>(LS − ES) = 0</strong> (red). Layout follows the paper network: Start on the
+            left, earthworks on one row, rebar/concrete on the row below, End on the right.
           </p>
         </div>
         {user?.role === 'contractor' && (

@@ -84,6 +84,7 @@ const DEPS: { from: string; to: string; lag?: number }[] = [
   { from: 'r405c', to: 'e1041' },
   { from: 'e1041', to: 'e1042', lag: -1 },
   { from: 'e1042', to: 'e103' },
+  { from: 'e1042', to: 'r404b2' },
   { from: 'e103', to: 'e105' },
   { from: 'e105', to: 'e200' },
   { from: 'e200', to: 'p311u' },
