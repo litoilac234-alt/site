@@ -51,7 +51,7 @@ class ScheduleSync
             'point_date' => $startKey,
             'original_plan_pct' => 0.0,
             'current_plan_pct' => 0.0,
-            'actual_pct' => $preservedActual[$startKey] ?? 0.0,
+            'actual_pct' => $preservedActual[$startKey] ?? null,
             'label' => 'Project start',
         ];
 
@@ -159,9 +159,15 @@ class ScheduleSync
         $latestReportDate = null;
 
         if ($reportActuals === []) {
+            // First schedule entry is Target Plan only — no Time Now and no delay colors.
+            foreach ($barChartTasks as &$task) {
+                $task['actualEndDay'] = null;
+            }
+            unset($task);
+
             return [
                 'tasks' => $barChartTasks,
-                'timeNow' => $timeNow,
+                'timeNow' => 0,
                 'latestPercent' => null,
                 'latestReportDate' => null,
             ];

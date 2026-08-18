@@ -13,7 +13,9 @@ function getScheduleStatus(
   actualEnd: number | null | undefined,
   timeNow: number,
 ): 'ahead' | 'on' | 'behind' | 'planned' {
-  if (actualEnd == null) return 'planned';
+  // No reports yet → Target Plan only. Delay / ahead / on-schedule starts after
+  // SWA, STEWA, or IAR actual % is recorded.
+  if (timeNow < 1 || actualEnd == null) return 'planned';
   if (actualEnd < timeNow && plannedEnd >= timeNow) return 'behind';
   if (actualEnd > plannedEnd) return 'behind';
   if (actualEnd < plannedEnd) return 'ahead';
@@ -86,6 +88,7 @@ export function BarChartPage() {
     [totalDays],
   );
   const weeks = useMemo(() => buildWeeks(totalDays), [totalDays]);
+  const hasReportActuals = timeNow >= 1 && latestReportPercent != null;
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
@@ -97,8 +100,9 @@ export function BarChartPage() {
           </span>
           <h1 className="mt-3 text-2xl font-bold text-text">Construction Schedule Bar Chart</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
-            Tasks come from the PDM schedule. Actual progress and the Time Now line update
-            automatically from submitted SWA, STEWA, and IAR reports.
+            When the contractor first enters the PDM, every bar is <strong>Target Plan</strong>{' '}
+            (blue). There is no delayed or ahead status yet. After SWA, STEWA, or IAR reports
+            record actual %, Time Now and delay colors appear against that target.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -127,7 +131,7 @@ export function BarChartPage() {
           <span className="h-3 w-6 rounded bg-primary" /> Ahead of schedule
         </span>
         <span className="flex items-center gap-2">
-          <span className="h-3 w-6 rounded bg-blue-600" /> Target Plan (not started)
+          <span className="h-3 w-6 rounded bg-blue-600" /> Target Plan (first input / no reports yet)
         </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-6 rounded border-2 border-red-600 bg-blue-600" /> Critical path
@@ -168,21 +172,27 @@ export function BarChartPage() {
                   <th
                     key={d}
                     className={`w-7 border-l border-border/50 p-1 text-center font-normal ${
-                      d === timeNow
+                      hasReportActuals && d === timeNow
                         ? 'bg-amber-100 font-semibold text-amber-900 ring-1 ring-inset ring-amber-400'
                         : 'text-text-muted'
                     }`}
                   >
                     {d}
-                    {d === timeNow ? <span className="block text-[8px] font-bold uppercase">Now</span> : null}
+                    {hasReportActuals && d === timeNow ? (
+                      <span className="block text-[8px] font-bold uppercase">Now</span>
+                    ) : null}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const hasActual = task.actualEndDay != null;
-                const status = getScheduleStatus(task.endDay, task.actualEndDay, timeNow);
+                const hasActual = hasReportActuals && task.actualEndDay != null;
+                const status = getScheduleStatus(
+                  task.endDay,
+                  hasReportActuals ? task.actualEndDay : null,
+                  timeNow,
+                );
                 const plannedSpan = Math.max(0, task.endDay - task.startDay + 1);
                 const critical = !!task.isCritical;
                 return (
@@ -208,7 +218,7 @@ export function BarChartPage() {
                           <td
                             key={d}
                             className={`h-10 min-w-[1.75rem] border-l border-border/30 bg-card ${
-                              d === timeNow ? 'bg-amber-50/80' : ''
+                              hasReportActuals && d === timeNow ? 'bg-amber-50/80' : ''
                             }`}
                           />
                         );
@@ -220,7 +230,9 @@ export function BarChartPage() {
                             key={d}
                             colSpan={plannedSpan}
                             className={`relative h-10 border-l border-border/30 bg-card p-1 align-middle ${
-                              timeNow >= task.startDay && timeNow <= task.endDay ? 'bg-amber-50/40' : ''
+                              hasReportActuals && timeNow >= task.startDay && timeNow <= task.endDay
+                                ? 'bg-amber-50/40'
+                                : ''
                             }`}
                           >
                             <div
