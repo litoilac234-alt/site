@@ -28,8 +28,8 @@ class RoadPdmSample
             ['key' => 'e105', 'number' => '105(1)', 'name' => 'Sub-Grade Preparation (Common Material)', 'duration' => 3],
             ['key' => 'e200', 'number' => '200(1)', 'name' => 'Aggregate Sub-Base Course', 'duration' => 15],
             ['key' => 'p311u', 'number' => '311(1)c1', 'name' => 'Portland Cement Concrete Pavement (Unreinforced), 0.23m thk. 14 days', 'duration' => 30],
-            ['key' => 'r404a2', 'number' => '404(1)a', 'name' => 'Reinforcing Steel Grade 40', 'duration' => 30],
-            ['key' => 'r404b2', 'number' => '404(1)b', 'name' => 'Reinforcing Steel Grade 60', 'duration' => 20],
+            ['key' => 'r404a2', 'number' => '404(1)a', 'name' => 'Reinforcing Steel, Grade 40 (continued)', 'duration' => 30],
+            ['key' => 'r404b2', 'number' => '404(1)a', 'name' => 'Reinforcing Steel, Grade 60 (continued)', 'duration' => 20],
             ['key' => 'r405p', 'number' => '405(1)a3', 'name' => 'Structural Concrete Class A, 20.68MPa @ 28 days', 'duration' => 30],
             ['key' => 'p311r', 'number' => '311(2)e1', 'name' => 'Portland Cement Concrete Pavement (Reinforced), 0.28m thk. 14 days', 'duration' => 1],
         ];

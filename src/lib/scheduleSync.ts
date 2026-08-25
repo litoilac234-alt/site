@@ -53,7 +53,7 @@ export function deriveBarChartFromPdm(
     activities: scheduled,
     barChartTasks,
     projectDuration,
-    criticalPath: getCriticalPath(scheduled).map((a) => a.number),
+    criticalPath: getCriticalPath(scheduled, dependencies).map((a) => a.number),
     pdmError: null,
   };
 }

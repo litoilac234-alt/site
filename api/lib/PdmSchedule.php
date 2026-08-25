@@ -117,7 +117,59 @@ class PdmSchedule
         return [
             'activities' => array_values($map),
             'projectDuration' => $projectEnd,
-            'criticalPath' => array_column($critical, 'number'),
+            'criticalPath' => self::longestCriticalChain($map, $preds, $projectEnd),
         ];
+    }
+
+    /**
+     * One continuous critical chain (paper style), not every zero-float parallel activity.
+     *
+     * @param array<string, array<string, mixed>> $map
+     * @param array<string, list<array<string, mixed>>> $preds
+     * @return list<string>
+     */
+    private static function longestCriticalChain(array $map, array $preds, int $projectEnd): array
+    {
+        $terminals = array_filter(
+            $map,
+            static fn(array $a): bool => !empty($a['isCritical']) && (int)($a['ef'] ?? 0) === $projectEnd,
+        );
+        if ($terminals === []) {
+            return array_column(
+                array_values(array_filter($map, static fn(array $a): bool => !empty($a['isCritical']))),
+                'number',
+            );
+        }
+
+        $best = [];
+        foreach (array_keys($terminals) as $terminalId) {
+            $chain = [];
+            $id = (string)$terminalId;
+            while (true) {
+                $chain[] = $id;
+                $criticalPreds = [];
+                foreach ($preds[$id] ?? [] as $dep) {
+                    $pid = (string)$dep['fromId'];
+                    if (!empty($map[$pid]['isCritical'])) {
+                        $criticalPreds[] = $dep;
+                    }
+                }
+                if ($criticalPreds === []) {
+                    break;
+                }
+                usort(
+                    $criticalPreds,
+                    static fn(array $a, array $b): int => ((int)($map[(string)$b['fromId']]['ef'] ?? 0))
+                        <=> ((int)($map[(string)$a['fromId']]['ef'] ?? 0)),
+                );
+                $id = (string)$criticalPreds[0]['fromId'];
+            }
+            $chain = array_reverse($chain);
+            if (count($chain) > count($best)) {
+                $best = $chain;
+            }
+        }
+
+        return array_map(static fn(string $id): string => (string)($map[$id]['number'] ?? ''), $best);
     }
 }

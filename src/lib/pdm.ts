@@ -125,10 +125,43 @@ function topologicalSort(
   return result.length === activities.length ? result : null;
 }
 
-export function getCriticalPath(activities: PdmActivity[]): PdmActivity[] {
-  return activities
-    .filter((a) => a.isCritical)
-    .sort((a, b) => (a.es ?? 0) - (b.es ?? 0));
+export function getCriticalPath(
+  activities: PdmActivity[],
+  dependencies: PdmDependency[] = [],
+): PdmActivity[] {
+  const projectEnd = Math.max(...activities.map((a) => a.ef ?? 0), 0);
+  const byId = new Map(activities.map((a) => [a.id, a]));
+  const preds = new Map<string, PdmDependency[]>();
+  for (const dep of dependencies) {
+    if (!preds.has(dep.toId)) preds.set(dep.toId, []);
+    preds.get(dep.toId)!.push(dep);
+  }
+
+  const terminals = activities.filter(
+    (a) => a.isCritical && (a.ef ?? 0) === projectEnd,
+  );
+  if (terminals.length === 0) {
+    return activities.filter((a) => a.isCritical).sort((a, b) => (a.es ?? 0) - (b.es ?? 0));
+  }
+
+  let bestIds: string[] = [];
+  for (const terminal of terminals) {
+    const chain: string[] = [];
+    let id = terminal.id;
+    while (true) {
+      chain.push(id);
+      const criticalPreds = (preds.get(id) ?? []).filter((dep) => byId.get(dep.fromId)?.isCritical);
+      if (criticalPreds.length === 0) break;
+      criticalPreds.sort(
+        (a, b) => (byId.get(b.fromId)?.ef ?? 0) - (byId.get(a.fromId)?.ef ?? 0),
+      );
+      id = criticalPreds[0].fromId;
+    }
+    const ordered = chain.reverse();
+    if (ordered.length > bestIds.length) bestIds = ordered;
+  }
+
+  return bestIds.map((id) => byId.get(id)!).filter(Boolean);
 }
 
 export const DEPENDENCY_LABELS: Record<DependencyType, string> = {

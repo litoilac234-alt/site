@@ -27,8 +27,9 @@ function paperLane(activity: PdmActivity): number {
   if (name.includes('safety') || name.includes('health program')) return 0;
   if (n === 'B.5' || n.startsWith('A.1')) return 1;
   if (n.startsWith('311(2)')) return 3;
-  if (n.startsWith('404') && activity.duration >= 20) return 3;
   if (n === '404(1)b') return 3;
+  if (n === '404(1)a' && activity.duration === 1) return 2;
+  if (n.startsWith('404') && activity.duration > 1) return 3;
   if (n.startsWith('405') && activity.duration >= 20) return 3;
   return 2;
 }

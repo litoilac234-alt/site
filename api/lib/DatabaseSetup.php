@@ -204,7 +204,10 @@ class DatabaseSetup
         $placeholder = (int)$pdo->query(
             "SELECT COUNT(*) FROM pdm_activities WHERE project_id=1 AND activity_name IN ('Activity A','Activity B')"
         )->fetchColumn();
-        if ($count > 0 && $placeholder === 0) {
+        $outdatedRoad = (int)$pdo->query(
+            "SELECT COUNT(*) FROM pdm_activities WHERE project_id=1 AND activity_number='404(1)b' AND duration=20"
+        )->fetchColumn();
+        if ($count > 0 && $placeholder === 0 && $outdatedRoad === 0 && $count >= 20) {
             return;
         }
 
