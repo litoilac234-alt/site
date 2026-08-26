@@ -8,6 +8,7 @@ import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import { getSchedule, saveSchedule, clearSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
+import { buildRoadPdmSample, REFERENCE_PDM_TITLE } from '../data/roadPdmSample';
 import type { DependencyType, PdmActivity } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -231,6 +232,28 @@ export function ScheduleEditorPage() {
                     className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
                   >
                     + Add activity
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          'Load the Remebella, Buguey PERT/CPM reference (20 activities, 110 days)? This replaces the current schedule.',
+                        )
+                      ) {
+                        return;
+                      }
+                      const sample = buildRoadPdmSample();
+                      patchSchedule((d) => ({
+                        ...d,
+                        activities: sample.activities,
+                        dependencies: sample.dependencies,
+                      }));
+                      setSuccess(`Reference PDM loaded: ${REFERENCE_PDM_TITLE}`);
+                    }}
+                    className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary"
+                  >
+                    Load reference PDM
                   </button>
                   <button
                     type="button"

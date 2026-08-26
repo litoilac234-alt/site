@@ -235,8 +235,8 @@ class DatabaseSetup
     {
         $ids = [];
         $stmt = $pdo->prepare(
-            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, pos_x, pos_y)
-             VALUES (?,?,?,?,?,?)'
+            'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, es_override, pos_x, pos_y)
+             VALUES (?,?,?,?,?,?,?)'
         );
         foreach (RoadPdmSample::activities() as $i => $a) {
             $stmt->execute([
@@ -244,6 +244,7 @@ class DatabaseSetup
                 $a['number'],
                 $a['name'],
                 $a['duration'],
+                $a['es_override'] ?? null,
                 120 + ($i % 4) * 180,
                 80 + intdiv($i, 4) * 140,
             ]);

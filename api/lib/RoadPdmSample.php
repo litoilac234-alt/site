@@ -4,18 +4,19 @@ declare(strict_types=1);
 namespace Peo;
 
 /**
- * Sample PDM from a DPWH-style road concreting inspection network (110 calendar days).
+ * PERT/CPM reference: Improvement of Roads — Remebella, Buguey, Cagayan (110 calendar days).
  */
 class RoadPdmSample
 {
-    /** @return list<array{key:string,number:string,name:string,duration:int}> */
+    public const PROJECT_TITLE = 'Improvement of Roads - 1st District - Concreting of Barangay Road, Remebella, Buguey, Cagayan';
+    /** @return list<array{key:string,number:string,name:string,duration:int,es_override?:int}> */
     public static function activities(): array
     {
         return [
-            ['key' => 'b5', 'number' => 'B.5', 'name' => 'Project Billboard', 'duration' => 1],
-            ['key' => 'a111', 'number' => 'A.1.1(11)', 'name' => 'Provision of Furnitures/Fixtures, etc. for the Field Office for the Engineer', 'duration' => 10],
-            ['key' => 'b9', 'number' => 'B.9', 'name' => 'Mobilization / Demobilization', 'duration' => 10],
-            ['key' => 'b7', 'number' => 'B.7', 'name' => 'Construction Safety & Health Program', 'duration' => 110],
+            ['key' => 'b5', 'number' => 'B.5', 'name' => 'Project Billboard', 'duration' => 1, 'es_override' => 1],
+            ['key' => 'a111', 'number' => 'A.1.1(11)', 'name' => 'Provision of Furnitures/Fixtures, etc. for the Field Office for the Engineer', 'duration' => 10, 'es_override' => 1],
+            ['key' => 'b9', 'number' => 'B.9', 'name' => 'Mobilization / Demobilization', 'duration' => 10, 'es_override' => 1],
+            ['key' => 'b7', 'number' => 'B.7', 'name' => 'Construction Safety & Health Program', 'duration' => 110, 'es_override' => 1],
             ['key' => 'r1013', 'number' => '101(3)b3', 'name' => 'Removal of Actual Structures/Obstructions, 0.23m thk. PCCP (Unreinforced)', 'duration' => 5],
             ['key' => 'r1014', 'number' => '101(4)a1', 'name' => 'Removal of Actual Structures/Obstructions, 610mm dia. RCPC', 'duration' => 3],
             ['key' => 'r404a', 'number' => '404(1)a', 'name' => 'Reinforcing Steel, Grade 40', 'duration' => 1],
@@ -56,7 +57,6 @@ class RoadPdmSample
             $fs('r405c', 'e1041'),
             $fs('e1041', 'e1042', -1),
             $fs('e1042', 'e103'),
-            $fs('e1042', 'r404b2'),
             $fs('e103', 'e105'),
             $fs('e105', 'e200'),
             $fs('e200', 'p311u'),

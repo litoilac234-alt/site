@@ -1,15 +1,26 @@
 import type { PdmActivity, PdmDependency } from '../types';
 
-const ACTS: { key: string; number: string; name: string; duration: number }[] = [
-  { key: 'b5', number: 'B.5', name: 'Project Billboard', duration: 1 },
+/** PERT/CPM reference — Remebella, Buguey, Cagayan (110 calendar days). */
+export const REFERENCE_PDM_TITLE =
+  'Improvement of Roads - 1st District - Concreting of Barangay Road, Remebella, Buguey, Cagayan';
+
+const ACTS: { key: string; number: string; name: string; duration: number; esOverride?: number }[] = [
+  { key: 'b5', number: 'B.5', name: 'Project Billboard', duration: 1, esOverride: 1 },
   {
     key: 'a111',
     number: 'A.1.1(11)',
     name: 'Provision of Furnitures/Fixtures, etc. for the Field Office for the Engineer',
     duration: 10,
+    esOverride: 1,
   },
-  { key: 'b9', number: 'B.9', name: 'Mobilization / Demobilization', duration: 10 },
-  { key: 'b7', number: 'B.7', name: 'Construction Safety & Health Program', duration: 110 },
+  { key: 'b9', number: 'B.9', name: 'Mobilization / Demobilization', duration: 10, esOverride: 1 },
+  {
+    key: 'b7',
+    number: 'B.7',
+    name: 'Construction Safety & Health Program',
+    duration: 110,
+    esOverride: 1,
+  },
   {
     key: 'r1013',
     number: '101(3)b3',
@@ -62,7 +73,7 @@ const ACTS: { key: string; number: string; name: string; duration: number }[] = 
   {
     key: 'r405p',
     number: '405(1)a3',
-    name: 'Structural Concrete Class A, 20.68MPa @ 28 days',
+    name: 'Structural Concrete Class A, 20.68MPa @ 28 days (continued)',
     duration: 30,
   },
   {
@@ -84,7 +95,6 @@ const DEPS: { from: string; to: string; lag?: number }[] = [
   { from: 'r405c', to: 'e1041' },
   { from: 'e1041', to: 'e1042', lag: -1 },
   { from: 'e1042', to: 'e103' },
-  { from: 'e1042', to: 'r404b2' },
   { from: 'e103', to: 'e105' },
   { from: 'e105', to: 'e200' },
   { from: 'e200', to: 'p311u' },
@@ -99,6 +109,7 @@ export function buildRoadPdmSample(): { activities: PdmActivity[]; dependencies:
     number: a.number,
     name: a.name,
     duration: a.duration,
+    esOverride: a.esOverride ?? null,
   }));
   const dependencies: PdmDependency[] = DEPS.map((d, i) => ({
     id: `sample-d-${i}`,
