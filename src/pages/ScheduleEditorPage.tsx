@@ -5,10 +5,10 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
 import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
-import { getSchedule, saveSchedule, clearSchedule, type ProjectSchedule } from '../lib/scheduleApi';
+import { getSchedule, saveSchedule, clearSchedule, loadReferenceSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
-import { buildRoadPdmSample, REFERENCE_PDM_TITLE } from '../data/roadPdmSample';
+import { REFERENCE_PDM_TITLE } from '../data/roadPdmSample';
 import type { DependencyType, PdmActivity } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -238,20 +238,28 @@ export function ScheduleEditorPage() {
                     onClick={() => {
                       if (
                         !window.confirm(
-                          'Load the Remebella, Buguey PERT/CPM reference (20 activities, 110 days)? This replaces the current schedule.',
+                          'Load the Remebella, Buguey reference (PDM, bar chart, S-curve, BOQ)? This replaces the current schedule.',
                         )
                       ) {
                         return;
                       }
-                      const sample = buildRoadPdmSample();
-                      patchSchedule((d) => ({
-                        ...d,
-                        activities: sample.activities,
-                        dependencies: sample.dependencies,
-                      }));
-                      setSuccess(`Reference PDM loaded: ${REFERENCE_PDM_TITLE}`);
+                      void (async () => {
+                        setSaving(true);
+                        setError('');
+                        try {
+                          replaceData(
+                            applyPdmDerivatives(await loadReferenceSchedule(Number(projectId))),
+                          );
+                          setSuccess(`Reference loaded: ${REFERENCE_PDM_TITLE}`);
+                        } catch {
+                          setError('Could not load reference schedule.');
+                        } finally {
+                          setSaving(false);
+                        }
+                      })();
                     }}
-                    className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary"
+                    disabled={saving}
+                    className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary disabled:opacity-50"
                   >
                     Load reference PDM
                   </button>

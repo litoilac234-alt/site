@@ -9,6 +9,12 @@ import { ProjectSelect } from '../components/ProjectSelect';
 import { WorkItemsTable } from '../components/WorkItemsTable';
 import { newIarItem, newManpowerRow, newVariationItem, type IarAccomplishmentItem, type IarManpowerRow, type IarVariationItem } from '../lib/iarItems';
 import { computeStewaSlippage, newWorkItem, type WorkItem } from '../lib/workItems';
+import { listProjects } from '../lib/projectsApi';
+import {
+  buildReferenceWorkItems,
+  isReferenceProject,
+  referenceProjectMeta,
+} from '../data/roadProjectReference';
 import {
   approveReport,
   getReport,
@@ -165,6 +171,33 @@ export function SwaStewaEditorPage() {
       navigate('/swa-stewa', { replace: true });
     }
   }, [idParam, isContractor, navigate, routeType]);
+
+  useEffect(() => {
+    if (idParam) return;
+    let cancelled = false;
+    listProjects()
+      .then((res) => {
+        if (cancelled) return;
+        const proj = res.projects.find((p) => String(p.id) === projectId);
+        if (!proj || !isReferenceProject(proj.name)) return;
+        const meta = referenceProjectMeta();
+        setEditor((s) => ({
+          ...s,
+          data: {
+            ...s.data,
+            project_name: meta.project_name,
+            location: meta.location,
+            contractor: meta.contractor,
+            contract_amount: meta.contract_amount,
+          },
+          lineItems: reportType === 'SWA' && s.lineItems.length <= 1 ? buildReferenceWorkItems() : s.lineItems,
+        }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [idParam, projectId, reportType, setEditor]);
 
   useEffect(() => {
     if (!idParam) return;

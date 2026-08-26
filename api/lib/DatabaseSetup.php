@@ -219,6 +219,65 @@ class DatabaseSetup
         }
 
         // No demo PDM — contractor enters activities from the official reference.
+        self::seedRoadReferenceIfNeeded($pdo);
+    }
+
+    /** One-time: load Remebella road reference PDM + bar chart + S-curve on project 1. */
+    public static function seedRoadReferenceIfNeeded(PDO $pdo): void
+    {
+        self::ensureAppSettings($pdo);
+        $done = $pdo->query(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'road_reference_v3'"
+        )->fetchColumn();
+        if ($done === '1') {
+            return;
+        }
+
+        $exists = (int)$pdo->query('SELECT COUNT(*) FROM projects WHERE id = 1')->fetchColumn();
+        if ($exists === 0) {
+            $contractorId = (int)$pdo->query("SELECT id FROM users WHERE role = 'contractor' LIMIT 1")->fetchColumn();
+            $meta = RoadProjectReference::meta();
+            $pdo->prepare(
+                'INSERT INTO projects (id, name, contractor_id, location, start_date, planned_end_date, status) VALUES (?,?,?,?,?,?,?)'
+            )->execute([
+                1,
+                $meta['name'],
+                $contractorId ?: null,
+                $meta['location'],
+                $meta['start_date'],
+                $meta['planned_end_date'],
+                'active',
+            ]);
+        }
+
+        self::loadReferenceSchedule($pdo, 1);
+
+        $pdo->prepare(
+            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('road_reference_v3', '1')
+             ON DUPLICATE KEY UPDATE setting_value = '1'"
+        )->execute();
+    }
+
+    public static function loadReferenceSchedule(PDO $pdo, int $projectId): void
+    {
+        $meta = RoadProjectReference::meta();
+        $pdo->prepare(
+            'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ? WHERE id = ?'
+        )->execute([
+            $meta['name'],
+            $meta['location'],
+            $meta['start_date'],
+            $meta['planned_end_date'],
+            $projectId,
+        ]);
+
+        $pdo->prepare('DELETE FROM pdm_dependencies WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM pdm_activities WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM bar_chart_tasks WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM schedule_settings WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM s_curve_points WHERE project_id = ?')->execute([$projectId]);
+
+        self::insertRoadPdm($pdo, $projectId);
     }
 
     private static function ensureAppSettings(PDO $pdo): void
@@ -266,7 +325,8 @@ class DatabaseSetup
 
         $pdmInput = [];
         $actRows = $pdo->prepare(
-            'SELECT id, activity_number AS number, activity_name AS name, duration FROM pdm_activities WHERE project_id = ? ORDER BY id'
+            'SELECT id, activity_number AS number, activity_name AS name, duration, es_override
+             FROM pdm_activities WHERE project_id = ? ORDER BY id'
         );
         $actRows->execute([$projectId]);
         foreach ($actRows->fetchAll() as $row) {
@@ -275,6 +335,7 @@ class DatabaseSetup
                 'number' => $row['number'],
                 'name' => $row['name'],
                 'duration' => (int)$row['duration'],
+                'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
             ];
         }
         $dbDeps = $pdo->prepare(
@@ -303,8 +364,11 @@ class DatabaseSetup
 
         $duration = max(1, (int)($pdm['projectDuration'] ?? 110));
         $pdo->prepare(
-            'INSERT INTO schedule_settings (project_id, bar_chart_total_days, bar_chart_time_now) VALUES (?,?,10)'
+            'INSERT INTO schedule_settings (project_id, bar_chart_total_days, bar_chart_time_now) VALUES (?,?,10)
+             ON DUPLICATE KEY UPDATE bar_chart_total_days=VALUES(bar_chart_total_days)'
         )->execute([$projectId, $duration]);
+
+        ScheduleSync::syncDerivedViews($pdo, $projectId, $pdm);
     }
 
     public static function seedDemoReportsIfEmpty(PDO $pdo): void

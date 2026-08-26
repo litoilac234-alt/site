@@ -50,3 +50,11 @@ export function clearSchedule(projectId: number) {
     body: JSON.stringify({ project_id: projectId }),
   }) as Promise<ProjectSchedule>;
 }
+
+export function loadReferenceSchedule(projectId: number) {
+  return request(`${API}?action=load-reference`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId }),
+  }) as Promise<ProjectSchedule>;
+}

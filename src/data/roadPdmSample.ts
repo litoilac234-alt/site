@@ -69,7 +69,7 @@ const ACTS: { key: string; number: string; name: string; duration: number; esOve
     duration: 30,
   },
   { key: 'r404a2', number: '404(1)a', name: 'Reinforcing Steel, Grade 40 (continued)', duration: 30 },
-  { key: 'r404b2', number: '404(1)a', name: 'Reinforcing Steel, Grade 60 (continued)', duration: 20 },
+  { key: 'r404b2', number: '404(1)b', name: 'Reinforcing Steel, Grade 60 (Retaining Wall)', duration: 20 },
   {
     key: 'r405p',
     number: '405(1)a3',

@@ -342,6 +342,35 @@ if ($method === 'POST' && $action === 'save') {
     jsonResponse(loadSchedule($pdo, $projectId));
 }
 
+if ($method === 'POST' && $action === 'load-reference') {
+    Auth::requireRoles(['contractor']);
+    $body = readJsonBody();
+    $projectId = (int)($body['project_id'] ?? 0);
+    if (!$projectId) {
+        jsonError('project_id required');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        DatabaseSetup::loadReferenceSchedule($pdo, $projectId);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        jsonError('Load reference failed: ' . $e->getMessage(), 500);
+    }
+
+    jsonResponse(loadSchedule($pdo, $projectId));
+}
+
+if ($method === 'GET' && $action === 'reference-boq') {
+    Auth::requireAuth();
+    jsonResponse([
+        'project' => \Peo\RoadProjectReference::meta(),
+        'boq' => \Peo\RoadProjectReference::boqItems(),
+        'target_cumulative' => \Peo\RoadProjectReference::targetCumulativeByDay(),
+    ]);
+}
+
 if ($method === 'POST' && $action === 'clear') {
     Auth::requireRoles(['contractor']);
     $body = readJsonBody();

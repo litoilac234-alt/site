@@ -48,7 +48,11 @@ if ($method === 'GET') {
     $actuals = $reportActuals + $preserved;
 
     if ($scheduled !== []) {
-        $rawPoints = ScheduleSync::sCurveFromPdm($scheduled, $startDate, $duration, $actuals);
+        if (ScheduleSync::isReferenceProject($pdo, $projectId)) {
+            $rawPoints = ScheduleSync::sCurveFromReferenceTargets($startDate, $duration, $actuals);
+        } else {
+            $rawPoints = ScheduleSync::sCurveFromPdm($scheduled, $startDate, $duration, $actuals);
+        }
         $activities = ScheduleSync::sCurveActivitiesFromPdm($scheduled, $startDate);
     } else {
         $stmt = $pdo->prepare(

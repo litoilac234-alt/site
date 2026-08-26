@@ -29,6 +29,73 @@ class ScheduleSync
         return $tasks;
     }
 
+    /** Target S-curve from contractor reference milestones (WT% cumulative by day). */
+    public static function sCurveFromReferenceTargets(
+        string $startDate,
+        int $projectDuration,
+        array $preservedActual = [],
+        ?array $milestones = null,
+    ): array {
+        $milestones = $milestones ?? RoadProjectReference::targetCumulativeByDay();
+        $startTs = strtotime($startDate) ?: time();
+        $duration = max(1, $projectDuration);
+        $points = [];
+
+        $startKey = date('Y-m-d', $startTs);
+        $points[$startKey] = [
+            'point_date' => $startKey,
+            'original_plan_pct' => 0.0,
+            'current_plan_pct' => 0.0,
+            'actual_pct' => $preservedActual[$startKey] ?? null,
+            'label' => 'Project start',
+        ];
+
+        foreach ($milestones as $day => $pct) {
+            $dayNum = (int)$day;
+            if ($dayNum <= 0 || $dayNum > $duration) {
+                continue;
+            }
+            $dateKey = date('Y-m-d', strtotime("+{$dayNum} days", $startTs));
+            $pctVal = round(min(100.0, (float)$pct), 3);
+            $points[$dateKey] = [
+                'point_date' => $dateKey,
+                'original_plan_pct' => $pctVal,
+                'current_plan_pct' => $pctVal,
+                'actual_pct' => $preservedActual[$dateKey] ?? null,
+                'label' => 'Day ' . $dayNum,
+            ];
+        }
+
+        $endKey = date('Y-m-d', strtotime("+{$duration} days", $startTs));
+        $points[$endKey] = [
+            'point_date' => $endKey,
+            'original_plan_pct' => 100.0,
+            'current_plan_pct' => 100.0,
+            'actual_pct' => $preservedActual[$endKey] ?? ($points[$endKey]['actual_pct'] ?? null),
+            'label' => 'Project end',
+        ];
+
+        foreach ($preservedActual as $dateKey => $val) {
+            if ($val === null) {
+                continue;
+            }
+            if (isset($points[$dateKey])) {
+                $points[$dateKey]['actual_pct'] = (float)$val;
+            } else {
+                $points[$dateKey] = [
+                    'point_date' => $dateKey,
+                    'original_plan_pct' => null,
+                    'current_plan_pct' => null,
+                    'actual_pct' => (float)$val,
+                    'label' => 'Actual (report)',
+                ];
+            }
+        }
+
+        ksort($points);
+        return array_values($points);
+    }
+
     /** @param array<int, array<string, mixed>> $scheduledActivities */
     /** @param array<string, float|null> $preservedActual keyed by Y-m-d */
     public static function sCurveFromPdm(
@@ -505,7 +572,20 @@ class ScheduleSync
         $reportActuals = self::actualPointsFromReports($pdo, $projectId);
         $actuals = $reportActuals + $preserved;
         $startDate = self::projectStartDate($pdo, $projectId);
-        $points = self::sCurveFromPdm($scheduled, $startDate, $duration, $actuals);
+        if ($scheduled !== [] && self::isReferenceProject($pdo, $projectId)) {
+            $points = self::sCurveFromReferenceTargets($startDate, $duration, $actuals);
+        } else {
+            $points = self::sCurveFromPdm($scheduled, $startDate, $duration, $actuals);
+        }
         self::saveSCurvePoints($pdo, $projectId, $points);
+    }
+
+    public static function isReferenceProject(PDO $pdo, int $projectId): bool
+    {
+        $stmt = $pdo->prepare('SELECT name FROM projects WHERE id = ?');
+        $stmt->execute([$projectId]);
+        $name = (string)($stmt->fetchColumn() ?: '');
+        return str_contains($name, 'Remebella')
+            || str_contains($name, 'Concreting of Barangay Road');
     }
 }
