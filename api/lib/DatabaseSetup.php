@@ -200,25 +200,35 @@ class DatabaseSetup
 
     public static function seedScheduleIfEmpty(PDO $pdo): void
     {
-        $count = (int)$pdo->query('SELECT COUNT(*) FROM pdm_activities WHERE project_id=1')->fetchColumn();
-        $placeholder = (int)$pdo->query(
-            "SELECT COUNT(*) FROM pdm_activities WHERE project_id=1 AND activity_name IN ('Activity A','Activity B')"
+        self::ensureAppSettings($pdo);
+
+        // One-time wipe of legacy auto-seeded PDM so schedules can be rebuilt from a new reference.
+        $reset = $pdo->query(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_reset_v2'"
         )->fetchColumn();
-        $outdatedRoad = (int)$pdo->query(
-            "SELECT COUNT(*) FROM pdm_activities WHERE project_id=1 AND activity_number='404(1)b' AND duration=20"
-        )->fetchColumn();
-        if ($count > 0 && $placeholder === 0 && $outdatedRoad === 0 && $count >= 20) {
+        if ($reset !== '1') {
+            $pdo->exec('DELETE FROM pdm_dependencies');
+            $pdo->exec('DELETE FROM pdm_activities');
+            $pdo->exec('DELETE FROM bar_chart_tasks');
+            $pdo->exec('DELETE FROM schedule_settings');
+            $pdo->prepare(
+                "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_reset_v2', '1')
+                 ON DUPLICATE KEY UPDATE setting_value = '1'"
+            )->execute();
             return;
         }
 
-        if ($count > 0) {
-            $pdo->prepare('DELETE FROM pdm_dependencies WHERE project_id = 1')->execute();
-            $pdo->prepare('DELETE FROM pdm_activities WHERE project_id = 1')->execute();
-            $pdo->prepare('DELETE FROM bar_chart_tasks WHERE project_id = 1')->execute();
-            $pdo->prepare('DELETE FROM schedule_settings WHERE project_id = 1')->execute();
-        }
+        // No demo PDM — contractor enters activities from the official reference.
+    }
 
-        self::insertRoadPdm($pdo, 1);
+    private static function ensureAppSettings(PDO $pdo): void
+    {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS app_settings (
+              setting_key VARCHAR(64) PRIMARY KEY,
+              setting_value VARCHAR(255) NOT NULL
+            )
+        ");
     }
 
     public static function insertRoadPdm(PDO $pdo, int $projectId): void

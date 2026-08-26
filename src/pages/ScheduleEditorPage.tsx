@@ -5,10 +5,9 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
 import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
-import { getSchedule, saveSchedule, type ProjectSchedule } from '../lib/scheduleApi';
+import { getSchedule, saveSchedule, clearSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
-import { buildRoadPdmSample } from '../data/roadPdmSample';
 import type { DependencyType, PdmActivity } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -238,21 +237,27 @@ export function ScheduleEditorPage() {
                     onClick={() => {
                       if (
                         !window.confirm(
-                          'Replace the current activities with the road project PDM (billboard, mobilization, PCCP, etc.)?',
+                          'Clear all PDM activities, dependencies, and bar chart for this project?',
                         )
                       ) {
                         return;
                       }
-                      const sample = buildRoadPdmSample();
-                      patchSchedule((d) => ({
-                        ...d,
-                        activities: sample.activities,
-                        dependencies: sample.dependencies,
-                      }));
+                      void (async () => {
+                        setSaving(true);
+                        setError('');
+                        try {
+                          replaceData(applyPdmDerivatives(await clearSchedule(Number(projectId))));
+                          setSuccess('Schedule cleared. Ready for a new reference PDM.');
+                        } catch {
+                          setError('Could not clear schedule.');
+                        } finally {
+                          setSaving(false);
+                        }
+                      })();
                     }}
-                    className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary"
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700"
                   >
-                    Load road PDM sample
+                    Clear schedule
                   </button>
                   </div>
                 </div>

@@ -342,4 +342,28 @@ if ($method === 'POST' && $action === 'save') {
     jsonResponse(loadSchedule($pdo, $projectId));
 }
 
+if ($method === 'POST' && $action === 'clear') {
+    Auth::requireRoles(['contractor']);
+    $body = readJsonBody();
+    $projectId = (int)($body['project_id'] ?? 0);
+    if (!$projectId) {
+        jsonError('project_id required');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM pdm_dependencies WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM pdm_activities WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM bar_chart_tasks WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM schedule_settings WHERE project_id = ?')->execute([$projectId]);
+        $pdo->prepare('DELETE FROM s_curve_points WHERE project_id = ?')->execute([$projectId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        jsonError('Clear failed: ' . $e->getMessage(), 500);
+    }
+
+    jsonResponse(loadSchedule($pdo, $projectId));
+}
+
 jsonError('Method not allowed', 405);
