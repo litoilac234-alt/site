@@ -309,7 +309,7 @@ class ScheduleSync
                  FROM swa_stewa_reports
                  WHERE project_id = ?
                    AND report_type IN ('SWA', 'STEWA', 'IAR')
-                   AND status <> 'rejected'
+                   AND status NOT IN ('draft', 'rejected', 'pending_contractor')
                  ORDER BY created_at ASC, id ASC"
             );
             $stmt->execute([$projectId]);

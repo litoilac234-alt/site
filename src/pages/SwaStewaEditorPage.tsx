@@ -9,19 +9,19 @@ import { ProjectSelect } from '../components/ProjectSelect';
 import { WorkItemsTable } from '../components/WorkItemsTable';
 import { newIarItem, newManpowerRow, newVariationItem, type IarAccomplishmentItem, type IarManpowerRow, type IarVariationItem } from '../lib/iarItems';
 import { computeStewaSlippage, newWorkItem, type WorkItem } from '../lib/workItems';
-import { listProjects } from '../lib/projectsApi';
-import {
-  buildReferenceWorkItems,
-  isReferenceProject,
-  referenceProjectMeta,
-} from '../data/roadProjectReference';
+import { getProject } from '../lib/projectsApi';
+import { buildReferenceWorkItems } from '../data/roadProjectReference';
 import {
   approveReport,
+  contractorConfirm,
   getReport,
+  listReportRevisions,
   previewReport,
   rejectReport,
   saveReport,
+  sendToContractor,
   submitReport,
+  type ContractorChange,
 } from '../lib/swaStewaApi';
 import { trackReportViewed } from '../lib/recentViewed';
 import { Button, ButtonLink } from '../components/ui/Button';
@@ -33,7 +33,7 @@ import { SubmissionSuccessSign } from '../components/ui/SubmissionSuccessSign';
 import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
 import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import {
-  canUserEditReportType,
+  canEditReport,
   reportIsViewOnly,
   type SwaStewaReportKind,
 } from '../lib/reportPermissions';
@@ -165,32 +165,36 @@ export function SwaStewaEditorPage() {
   const [generateBarChart, setGenerateBarChart] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [contractorChanges, setContractorChanges] = useState<ContractorChange[]>([]);
+  const [revisionCount, setRevisionCount] = useState(0);
 
   useEffect(() => {
-    if (!idParam && isContractor && routeType && routeType !== 'IAR') {
-      navigate('/swa-stewa', { replace: true });
+    if (!idParam && isContractor && routeType === 'IAR') {
+      // IAR only — contractor SWA/STEWA access is via pending_contractor reports
     }
-  }, [idParam, isContractor, navigate, routeType]);
+  }, [idParam, isContractor, routeType]);
 
   useEffect(() => {
     if (idParam) return;
     let cancelled = false;
-    listProjects()
+    getProject(Number(projectId))
       .then((res) => {
         if (cancelled) return;
-        const proj = res.projects.find((p) => String(p.id) === projectId);
-        if (!proj || !isReferenceProject(proj.name)) return;
-        const meta = referenceProjectMeta();
+        const d = res.report_defaults;
         setEditor((s) => ({
           ...s,
           data: {
             ...s.data,
-            project_name: meta.project_name,
-            location: meta.location,
-            contractor: meta.contractor,
-            contract_amount: meta.contract_amount,
+            project_name: d.project_name || s.data.project_name,
+            location: d.location || s.data.location,
+            contractor: d.contractor || s.data.contractor,
+            contract_amount: d.contract_amount || s.data.contract_amount,
+            notice_to_proceed: d.start_date || s.data.notice_to_proceed,
           },
-          lineItems: reportType === 'SWA' && s.lineItems.length <= 1 ? buildReferenceWorkItems() : s.lineItems,
+          lineItems:
+            reportType === 'SWA' && s.lineItems.length <= 1 && res.project.name.includes('Remebella')
+              ? buildReferenceWorkItems()
+              : s.lineItems,
         }));
       })
       .catch(() => undefined);
@@ -208,7 +212,11 @@ export function SwaStewaEditorPage() {
         setReportId(r.id);
         setStatus(r.status);
         setReportNumber(r.report_number);
+        setContractorChanges(r.contractor_changes ?? []);
         trackReportViewed(r.id);
+        listReportRevisions(r.id)
+          .then((rev) => setRevisionCount(rev.revisions.length))
+          .catch(() => setRevisionCount(0));
         const rd = r.report_data as Record<string, unknown>;
         const scalar: Record<string, string> = {};
         for (const [k, v] of Object.entries(rd)) {
@@ -335,6 +343,7 @@ export function SwaStewaEditorPage() {
       setReportId(res.report.id);
       setReportNumber(res.report.report_number);
       setStatus(res.report.status);
+      setContractorChanges(res.report.contractor_changes ?? []);
       navigate(`/swa-stewa/edit/${res.report.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -414,9 +423,40 @@ export function SwaStewaEditorPage() {
     setStatus('rejected');
   };
 
-  const statusEditable = !status || status === 'draft' || status === 'rejected';
-  const canEditForm = statusEditable && canUserEditReportType(user?.role, reportType);
-  const isViewOnly = reportIsViewOnly(user?.role, reportType);
+  const canEditForm = canEditReport(user?.role, reportType, status);
+  const isViewOnly = reportIsViewOnly(user?.role, reportType, status);
+  const changedFields = new Set(contractorChanges.map((c) => c.field.split('.')[0]));
+  const isFieldChanged = (key: string) => changedFields.has(key);
+
+  const handleSendToContractor = async () => {
+    if (!reportId) return;
+    setLoading(true);
+    try {
+      await sendToContractor(reportId);
+      setStatus('pending_contractor');
+      setContractorChanges([]);
+      setSuccess('Sent to contractor for review.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send to contractor.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContractorConfirm = async () => {
+    if (!reportId) return;
+    setLoading(true);
+    try {
+      const res = await contractorConfirm(reportId);
+      setStatus(res.status);
+      setContractorChanges(res.report.contractor_changes ?? []);
+      setSuccess('Confirmed — Engineer I will review your changes.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Confirm failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
   const canApproveNow =
     (user?.role === 'engineer_2' && status === 'pending_review') ||
     (user?.role === 'engineer_3' && status === 'with_engineer_3') ||
@@ -430,25 +470,37 @@ export function SwaStewaEditorPage() {
     label: string,
     type: 'text' | 'number' | 'date' | 'textarea' = 'text',
     span2 = false,
-  ) => (
-    <FormField key={key} label={label} className={span2 ? 'sm:col-span-2' : ''}>
-      {type === 'textarea' ? (
-        <TextArea
-          disabled={!canEditForm}
-          rows={3}
-          value={data[key] ?? ''}
-          onChange={(e) => setField(key, e.target.value)}
-        />
-      ) : (
-        <TextInput
-          disabled={!canEditForm}
-          type={type}
-          value={data[key] ?? ''}
-          onChange={(e) => setField(key, e.target.value)}
-        />
-      )}
-    </FormField>
-  );
+  ) => {
+    const changed = isFieldChanged(key);
+    const change = contractorChanges.find((c) => c.field === key);
+    return (
+      <FormField key={key} label={label} className={span2 ? 'sm:col-span-2' : ''}>
+        {type === 'textarea' ? (
+          <TextArea
+            disabled={!canEditForm}
+            rows={3}
+            value={data[key] ?? ''}
+            onChange={(e) => setField(key, e.target.value)}
+            className={changed ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-300' : undefined}
+          />
+        ) : (
+          <TextInput
+            disabled={!canEditForm}
+            type={type}
+            value={data[key] ?? ''}
+            onChange={(e) => setField(key, e.target.value)}
+            className={changed ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-300' : undefined}
+          />
+        )}
+        {change && (
+          <p className="mt-1 text-xs text-amber-800">
+            Contractor changed: <span className="line-through">{change.old || '—'}</span> →{' '}
+            <strong>{change.new || '—'}</strong>
+          </p>
+        )}
+      </FormField>
+    );
+  };
 
   return (
     <main className="app-main flex flex-1 flex-col overflow-y-auto">
@@ -468,12 +520,36 @@ export function SwaStewaEditorPage() {
         }
       />
 
-      {isViewOnly && (
+      {isViewOnly && user?.role === 'contractor' && reportType === 'IAR' && (
         <div className="mx-auto max-w-4xl px-8">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            View only — you do not have permission to edit this report type. SWA and STEWA are
-            prepared by Engineer I and Engineer II; IAR is prepared by Engineer I and the contractor.
+            View only — this IAR cannot be edited in its current status.
           </div>
+        </div>
+      )}
+
+      {user?.role === 'engineer_1' && contractorChanges.length > 0 && (
+        <div className="mx-auto max-w-4xl px-8">
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-semibold">Contractor changes ({contractorChanges.length})</p>
+            <ul className="mt-2 list-inside list-disc space-y-1">
+              {contractorChanges.map((c) => (
+                <li key={c.field}>
+                  {c.label}: <span className="line-through">{c.old || '—'}</span> →{' '}
+                  <strong>{c.new || '—'}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {revisionCount > 0 && (
+        <div className="mx-auto max-w-4xl px-8 pt-2">
+          <p className="text-xs text-text-muted">
+            {revisionCount} revision{revisionCount !== 1 ? 's' : ''} saved — previous versions are
+            kept in the system and are not overwritten after approval.
+          </p>
         </div>
       )}
 
@@ -670,10 +746,41 @@ export function SwaStewaEditorPage() {
               <Button type="button" variant="ghost" disabled={loading} onClick={handlePreview}>
                 Preview
               </Button>
-              <Button type="button" variant="primary" disabled={loading} onClick={handleSubmit}>
-                Submit for review
-              </Button>
+              {user?.role === 'engineer_1' &&
+                (reportType === 'SWA' || reportType === 'STEWA') &&
+                (status === 'draft' || status === 'rejected') && (
+                  <Button type="button" variant="secondary" disabled={loading} onClick={handleSendToContractor}>
+                    Send to contractor
+                  </Button>
+                )}
+              {user?.role === 'contractor' &&
+                (reportType === 'SWA' || reportType === 'STEWA') &&
+                status === 'pending_contractor' && (
+                  <Button type="button" variant="primary" disabled={loading} onClick={handleContractorConfirm}>
+                    Confirm SWA/STEWA
+                  </Button>
+                )}
+              {(user?.role === 'engineer_1' || user?.role === 'engineer_2') && (
+                  <Button type="button" variant="primary" disabled={loading} onClick={handleSubmit}>
+                    Submit for review
+                  </Button>
+                )}
+              {user?.role === 'contractor' && reportType === 'IAR' && (
+                <Button type="button" variant="primary" disabled={loading} onClick={handleSubmit}>
+                  Submit IAR
+                </Button>
+              )}
             </>
+          )}
+          {!canEditForm && status === 'pending_contractor' && user?.role === 'contractor' && (
+            <span className="rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">
+              Review and confirm this {reportType}
+            </span>
+          )}
+          {!canEditForm && status === 'contractor_confirmed' && user?.role === 'engineer_1' && (
+            <span className="rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">
+              Contractor confirmed — review highlighted changes, then submit to Engineer II
+            </span>
           )}
           {!canEditForm && status === 'pending_review' && (
             <span className="rounded-xl bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary">

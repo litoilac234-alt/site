@@ -21,6 +21,8 @@ const REPORT_TYPES: { type: SwaStewaReportKind; label: string; desc: string; col
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
+  pending_contractor: 'With contractor',
+  contractor_confirmed: 'Contractor confirmed',
   pending_review: 'Pending',
   with_engineer_3: 'Pending',
   with_engineer_4: 'Pending',

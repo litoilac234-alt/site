@@ -6,12 +6,54 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use Peo\Auth;
 use Peo\DatabaseSetup;
+use Peo\ProjectInfo;
 
 $pdo = db();
 DatabaseSetup::ensureUsersAndProjects($pdo);
+DatabaseSetup::ensureSwaStewaTables($pdo);
+ProjectInfo::ensureTables($pdo);
 Auth::requireAuth();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+if ($method === 'GET' && isset($_GET['contractors'])) {
+    $rows = $pdo->query(
+        "SELECT id, full_name, email FROM users WHERE role = 'contractor' AND is_active = 1 ORDER BY full_name"
+    )->fetchAll();
+    jsonResponse(['contractors' => $rows]);
+}
+
+$projectId = (int)($_GET['id'] ?? 0);
+
+if ($method === 'GET' && $projectId > 0) {
+    $project = ProjectInfo::fetch($pdo, $projectId);
+    if (!$project) {
+        jsonError('Project not found.', 404);
+    }
+    jsonResponse([
+        'project' => formatProjectRow($project),
+        'audit_log' => ProjectInfo::auditLog($pdo, $projectId),
+        'contract_history' => ProjectInfo::contractHistory($pdo, $projectId),
+        'report_defaults' => ProjectInfo::reportDefaults($pdo, $projectId),
+    ]);
+}
+
+function formatProjectRow(array $row): array
+{
+    return [
+        'id' => (int)$row['id'],
+        'name' => (string)$row['name'],
+        'location' => $row['location'],
+        'status' => (string)($row['status'] ?? 'active'),
+        'start_date' => $row['start_date'],
+        'planned_end_date' => $row['planned_end_date'],
+        'contractor_id' => $row['contractor_id'] !== null ? (int)$row['contractor_id'] : null,
+        'contractor_name' => $row['contractor_name'] ?? null,
+        'contract_amount' => $row['contract_amount'] !== null ? (float)$row['contract_amount'] : null,
+        'created_at' => $row['created_at'] ?? null,
+        'updated_at' => $row['updated_at'] ?? null,
+    ];
+}
 
 function projectPayloadFromBody(array $body): array
 {
@@ -20,77 +62,80 @@ function projectPayloadFromBody(array $body): array
         jsonError('Project title is required.');
     }
 
-    $location = trim((string)($body['location'] ?? ''));
-    $startDate = trim((string)($body['start_date'] ?? ''));
-    $plannedEnd = trim((string)($body['planned_end_date'] ?? ''));
-    $status = trim((string)($body['status'] ?? 'active'));
-    if ($status === '') {
-        $status = 'active';
-    }
+    $contractorId = isset($body['contractor_id']) && $body['contractor_id'] !== ''
+        ? (int)$body['contractor_id']
+        : null;
+    $contractAmount = isset($body['contract_amount']) && $body['contract_amount'] !== ''
+        ? round((float)$body['contract_amount'], 2)
+        : null;
 
     return [
         'name' => $name,
-        'location' => $location !== '' ? $location : null,
-        'start_date' => $startDate !== '' ? $startDate : null,
-        'planned_end_date' => $plannedEnd !== '' ? $plannedEnd : null,
-        'status' => $status,
+        'location' => trim((string)($body['location'] ?? '')) ?: null,
+        'start_date' => trim((string)($body['start_date'] ?? '')) ?: null,
+        'planned_end_date' => trim((string)($body['planned_end_date'] ?? '')) ?: null,
+        'status' => trim((string)($body['status'] ?? 'active')) ?: 'active',
+        'contractor_id' => $contractorId,
+        'contract_amount' => $contractAmount,
     ];
 }
 
-function fetchProject(PDO $pdo, int $id): ?array
-{
-    $sel = $pdo->prepare(
-        'SELECT id, name, location, status, start_date, planned_end_date FROM projects WHERE id = ?'
-    );
-    $sel->execute([$id]);
-    $row = $sel->fetch();
-    return $row ?: null;
-}
-
 if ($method === 'POST') {
-    // Only Engineer I can create the project that serves as the basis for
-    // the contractor's schedule.
     Auth::requireRoles(['engineer_1']);
-
     $body = readJsonBody();
     $payload = projectPayloadFromBody($body);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO projects (name, location, start_date, planned_end_date, status)
-         VALUES (?, ?, ?, ?, ?)'
+        'INSERT INTO projects (name, location, start_date, planned_end_date, status, contractor_id, contract_amount)
+         VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $payload['name'],
         $payload['location'],
         $payload['start_date'],
         $payload['planned_end_date'],
-        $payload['status'] ?: 'active',
+        $payload['status'],
+        $payload['contractor_id'],
+        $payload['contract_amount'],
     ]);
 
     $id = (int)$pdo->lastInsertId();
-    $row = fetchProject($pdo, $id);
-    jsonResponse(['project' => $row], 201);
+    $actorId = Auth::actorId();
+    ProjectInfo::auditProjectUpdate($pdo, $id, $actorId, [], $payload);
+    if ($payload['contract_amount'] !== null && $payload['contract_amount'] > 0) {
+        ProjectInfo::recordContractAmount(
+            $pdo,
+            $id,
+            $payload['contract_amount'],
+            $payload['start_date'] ?? date('Y-m-d'),
+            $actorId,
+            null,
+            'Initial contract amount',
+        );
+    }
+
+    $project = ProjectInfo::fetch($pdo, $id);
+    jsonResponse(['project' => formatProjectRow($project ?: [])], 201);
 }
 
 if ($method === 'PUT' || $method === 'PATCH') {
     Auth::requireRoles(['engineer_1']);
-
     $body = readJsonBody();
     $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
     if ($id <= 0) {
         jsonError('Project id is required.');
     }
 
-    $existing = fetchProject($pdo, $id);
-    if (!$existing) {
+    $before = ProjectInfo::fetch($pdo, $id);
+    if (!$before) {
         jsonError('Project not found.', 404);
     }
 
     $payload = projectPayloadFromBody($body);
-
     $stmt = $pdo->prepare(
         'UPDATE projects
-         SET name = ?, location = ?, start_date = ?, planned_end_date = ?, status = ?
+         SET name = ?, location = ?, start_date = ?, planned_end_date = ?, status = ?,
+             contractor_id = ?, contract_amount = ?
          WHERE id = ?'
     );
     $stmt->execute([
@@ -98,16 +143,24 @@ if ($method === 'PUT' || $method === 'PATCH') {
         $payload['location'],
         $payload['start_date'],
         $payload['planned_end_date'],
-        $payload['status'] ?: ($existing['status'] ?? 'active'),
+        $payload['status'],
+        $payload['contractor_id'],
+        $payload['contract_amount'],
         $id,
     ]);
 
-    $row = fetchProject($pdo, $id);
-    jsonResponse(['project' => $row]);
+    ProjectInfo::auditProjectUpdate($pdo, $id, Auth::actorId(), $before, $payload);
+    $project = ProjectInfo::fetch($pdo, $id);
+    jsonResponse(['project' => formatProjectRow($project ?: [])]);
 }
 
 $rows = $pdo->query(
-    'SELECT id, name, location, status, start_date, planned_end_date FROM projects ORDER BY name'
+    'SELECT p.id, p.name, p.location, p.status, p.start_date, p.planned_end_date,
+            p.contractor_id, p.contract_amount, p.created_at, p.updated_at,
+            u.full_name AS contractor_name
+     FROM projects p
+     LEFT JOIN users u ON u.id = p.contractor_id
+     ORDER BY p.name'
 )->fetchAll();
 
-jsonResponse(['projects' => $rows]);
+jsonResponse(['projects' => array_map('formatProjectRow', $rows)]);

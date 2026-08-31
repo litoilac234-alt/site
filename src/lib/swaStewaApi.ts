@@ -5,12 +5,21 @@ const API = apiUrl('swa_stewa.php');
 
 export type SwaStewaStatus =
   | 'draft'
+  | 'pending_contractor'
+  | 'contractor_confirmed'
   | 'pending_review'
   | 'with_engineer_3'
   | 'with_engineer_4'
   | 'approved'
   | 'rejected'
   | 'generated';
+
+export interface ContractorChange {
+  field: string;
+  label: string;
+  old: string;
+  new: string;
+}
 
 export interface SwaStewaReport {
   id: number;
@@ -25,6 +34,7 @@ export interface SwaStewaReport {
   status: SwaStewaStatus;
   project_name?: string;
   rejection_reason?: string;
+  contractor_changes?: ContractorChange[];
   created_at: string;
   generated_at?: string;
 }
@@ -82,6 +92,40 @@ export function submitReport(reportId: number, actorId?: number) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'submit', report_id: reportId, actor_id: actorId }),
   });
+}
+
+export function sendToContractor(reportId: number) {
+  return request(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'send_to_contractor', report_id: reportId }),
+  }) as Promise<{ status: string }>;
+}
+
+export function contractorConfirm(reportId: number) {
+  return request(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'contractor_confirm', report_id: reportId }),
+  }) as Promise<{ status: string; report: SwaStewaReport }>;
+}
+
+export function listReportRevisions(reportId: number) {
+  return request(`${API}?action=revisions&report_id=${reportId}`) as Promise<{
+    revisions: {
+      revision_number: number;
+      report_data: Record<string, unknown>;
+      line_items: import('./workItems').WorkItem[];
+      created_at: string;
+      changed_by_name?: string;
+    }[];
+  }>;
+}
+
+export function listReportAudit(reportId: number) {
+  return request(`${API}?action=audit&report_id=${reportId}`) as Promise<{
+    audit: { action: string; details: unknown; created_at: string; actor_name?: string }[];
+  }>;
 }
 
 export function approveReport(

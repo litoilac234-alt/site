@@ -11,8 +11,11 @@ use Peo\DatabaseSetup;
 use Peo\ExcelTemplateService;
 use Peo\IarExcelService;
 use Peo\PdfReportService;
+use Peo\ProjectInfo;
 use Peo\QrCodeService;
+use Peo\ReportChangeTracker;
 use Peo\ReportTemplateRenderer;
+use Peo\ScheduleSync;
 use Peo\WorkItemCalculator;
 
 set_exception_handler(static function (Throwable $e): void {
@@ -74,10 +77,10 @@ function publicUrl(string $reportNumber): string
 
 /**
  * @param array{role:string} $user
- * Edit rules:
+ * Edit rules by report type:
  *  - Engineer I: all report types
  *  - Engineer II: SWA and STEWA only
- *  - Contractor: IAR only
+ *  - Contractor: IAR; SWA/STEWA during contractor review
  */
 function assertCanEditReportType(array $user, string $type): void
 {
@@ -92,12 +95,55 @@ function assertCanEditReportType(array $user, string $type): void
         return;
     }
     if ($role === 'contractor') {
-        if ($type !== 'IAR') {
-            jsonError('Contractors can only edit IAR reports', 403);
+        if ($type === 'IAR') {
+            return;
+        }
+        if ($type === 'SWA' || $type === 'STEWA') {
+            return;
+        }
+        jsonError('Contractors can only edit IAR, SWA, and STEWA reports', 403);
+    }
+    jsonError('You do not have permission to edit this report', 403);
+}
+
+/** @param array{role:string} $user */
+/** @param array<string, mixed> $report */
+function assertCanEditReport(array $user, array $report): void
+{
+    assertCanEditReportType($user, (string)$report['report_type']);
+    $role = $user['role'];
+    $status = (string)$report['status'];
+    $type = (string)$report['report_type'];
+
+    $locked = ['pending_review', 'with_engineer_3', 'with_engineer_4', 'approved', 'generated'];
+    if (in_array($status, $locked, true)) {
+        jsonError('This report cannot be edited in its current status');
+    }
+
+    if ($role === 'contractor') {
+        if ($type === 'IAR') {
+            if (!in_array($status, ['draft', 'rejected'], true)) {
+                jsonError('IAR can only be edited while draft or rejected');
+            }
+            return;
+        }
+        if (!in_array($status, ['pending_contractor', 'rejected'], true)) {
+            jsonError('SWA/STEWA can only be edited during contractor review');
         }
         return;
     }
-    jsonError('You do not have permission to edit this report', 403);
+
+    if ($role === 'engineer_2') {
+        if (!in_array($status, ['draft', 'rejected'], true)) {
+            jsonError('Engineer II can only edit draft or rejected reports');
+        }
+        return;
+    }
+
+    // Engineer I
+    if (!in_array($status, ['draft', 'rejected', 'pending_contractor', 'contractor_confirmed'], true)) {
+        jsonError('Report cannot be edited in current status');
+    }
 }
 
 function getReport(PDO $pdo, string $idOrNumber): ?array
@@ -113,8 +159,23 @@ function getReport(PDO $pdo, string $idOrNumber): ?array
     if ($row) {
         $row['report_data'] = json_decode($row['report_data'], true);
         $row['line_items'] = json_decode($row['line_items'] ?? '[]', true);
+        $row['contractor_baseline'] = json_decode($row['contractor_baseline'] ?? 'null', true);
+        $row['contractor_changes'] = json_decode($row['contractor_changes'] ?? '[]', true);
     }
     return $row ?: null;
+}
+
+function syncScurveFromReports(PDO $pdo, int $projectId): void
+{
+    try {
+        $pdm = ScheduleSync::loadPdmResult($pdo, $projectId);
+        if (($pdm['activities'] ?? []) === []) {
+            return;
+        }
+        ScheduleSync::syncDerivedViews($pdo, $projectId, $pdm);
+    } catch (\Throwable) {
+        // Non-fatal
+    }
 }
 
 function patchReportData(PDO $pdo, int $reportId, array $patch): array
@@ -262,6 +323,44 @@ if ($method === 'GET') {
     if ($action === 'templates' || isset($_GET['templates'])) {
         Auth::requireRoles(['engineer_4']);
         jsonResponse(['templates' => getTemplateStatus()]);
+    }
+
+    if ($action === 'revisions' && isset($_GET['report_id'])) {
+        Auth::requireAuth();
+        $reportId = (int)$_GET['report_id'];
+        $stmt = $pdo->prepare(
+            'SELECT r.revision_number, r.report_data, r.line_items, r.created_at, u.full_name AS changed_by_name
+             FROM report_revisions r
+             LEFT JOIN users u ON u.id = r.changed_by
+             WHERE r.report_id = ?
+             ORDER BY r.revision_number DESC'
+        );
+        $stmt->execute([$reportId]);
+        $revs = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $revs[] = [
+                'revision_number' => (int)$row['revision_number'],
+                'report_data' => json_decode((string)$row['report_data'], true),
+                'line_items' => json_decode((string)($row['line_items'] ?? '[]'), true),
+                'created_at' => $row['created_at'],
+                'changed_by_name' => $row['changed_by_name'],
+            ];
+        }
+        jsonResponse(['revisions' => $revs]);
+    }
+
+    if ($action === 'audit' && isset($_GET['report_id'])) {
+        Auth::requireAuth();
+        $reportId = (int)$_GET['report_id'];
+        $stmt = $pdo->prepare(
+            'SELECT a.action, a.details, a.created_at, u.full_name AS actor_name
+             FROM report_audit_log a
+             LEFT JOIN users u ON u.id = a.actor_id
+             WHERE a.report_id = ?
+             ORDER BY a.created_at ASC, a.id ASC'
+        );
+        $stmt->execute([$reportId]);
+        jsonResponse(['audit' => $stmt->fetchAll() ?: []]);
     }
 
     if ($action === 'verify' || isset($_GET['qr'])) {
@@ -480,19 +579,37 @@ if ($method === 'POST') {
         if ($reportId) {
             $existing = getReport($pdo, (string)$reportId);
             if (!$existing) jsonError('Report not found', 404);
-            if (!in_array($existing['status'], ['draft', 'rejected'], true)) {
-                jsonError('Only draft or rejected reports can be edited');
-            }
+            assertCanEditReport($user, $existing);
+
             $rev = $pdo->prepare('SELECT COALESCE(MAX(revision_number),0)+1 FROM report_revisions WHERE report_id=?');
             $rev->execute([$reportId]);
             $revNum = (int)$rev->fetchColumn();
             $pdo->prepare('INSERT INTO report_revisions (report_id, revision_number, report_data, line_items, changed_by) VALUES (?,?,?,?,?)')
                 ->execute([$reportId, $revNum, json_encode($existing['report_data']), json_encode($existing['line_items']), $createdBy]);
 
-            $pdo->prepare('UPDATE swa_stewa_reports SET report_data=?, line_items=?, updated_at=NOW() WHERE id=?')
-                ->execute([json_encode($reportData), json_encode($lineItems), $reportId]);
-            audit($pdo, $reportId, $createdBy, 'updated');
+            $contractorChanges = $existing['contractor_changes'] ?? [];
+            if ($user['role'] === 'contractor' && in_array($existing['status'], ['pending_contractor', 'rejected'], true)) {
+                $baseline = is_array($existing['contractor_baseline'] ?? null)
+                    ? $existing['contractor_baseline']
+                    : ['report_data' => $existing['report_data'], 'line_items' => $existing['line_items']];
+                $newChanges = ReportChangeTracker::diff(
+                    $baseline['report_data'] ?? [],
+                    $baseline['line_items'] ?? [],
+                    $reportData,
+                    $lineItems,
+                );
+                $contractorChanges = $newChanges;
+            }
+
+            $pdo->prepare(
+                'UPDATE swa_stewa_reports SET report_data=?, line_items=?, contractor_changes=?, updated_at=NOW() WHERE id=?'
+            )->execute([json_encode($reportData), json_encode($lineItems), json_encode($contractorChanges), $reportId]);
+            audit($pdo, $reportId, $createdBy, 'updated', ['changed_fields' => count($contractorChanges)]);
             $report = getReport($pdo, (string)$reportId);
+
+            if (in_array($type, ['SWA', 'STEWA'], true)) {
+                syncScurveFromReports($pdo, $projectId);
+            }
         } else {
             $reportNumber = nextReportNumber($pdo, $type, $reportData['report_date'] ?? null);
             $public = publicUrl($reportNumber);
@@ -507,6 +624,31 @@ if ($method === 'POST') {
             ]);
             $reportId = (int)$pdo->lastInsertId();
             audit($pdo, $reportId, $createdBy, 'created');
+
+            // Auto-fill from current project record when fields are empty
+            $defaults = ProjectInfo::reportDefaults($pdo, $projectId);
+            $prefill = [];
+            if (empty($reportData['project_name'])) {
+                $prefill['project_name'] = $defaults['project_name'];
+            }
+            if (empty($reportData['location']) && $defaults['location']) {
+                $prefill['location'] = $defaults['location'];
+            }
+            if (empty($reportData['contractor']) && $defaults['contractor']) {
+                $prefill['contractor'] = $defaults['contractor'];
+            }
+            if (empty($reportData['contract_amount']) && $defaults['contract_amount']) {
+                $prefill['contract_amount'] = $defaults['contract_amount'];
+            }
+            if ($type === 'STEWA' && empty($reportData['notice_to_proceed']) && $defaults['start_date']) {
+                $prefill['notice_to_proceed'] = $defaults['start_date'];
+            }
+            if ($prefill !== []) {
+                $reportData = array_merge($reportData, $prefill);
+                $pdo->prepare('UPDATE swa_stewa_reports SET report_data=? WHERE id=?')
+                    ->execute([json_encode($reportData), $reportId]);
+            }
+
             $report = getReport($pdo, (string)$reportId);
         }
 
@@ -531,18 +673,70 @@ if ($method === 'POST') {
         jsonResponse(['report' => $report, 'preview_html' => $previewHtml]);
     }
 
+    if ($action === 'send_to_contractor') {
+        $user = Auth::requireRoles(['engineer_1']);
+        $reportId = (int)($body['report_id'] ?? 0);
+        $report = getReport($pdo, (string)$reportId);
+        if (!$report) jsonError('Not found', 404);
+        if (!in_array($report['report_type'], ['SWA', 'STEWA'], true)) {
+            jsonError('Only SWA and STEWA can be sent to the contractor');
+        }
+        if (!in_array($report['status'], ['draft', 'rejected'], true)) {
+            jsonError('Report must be draft or rejected to send to contractor');
+        }
+        $baseline = [
+            'report_data' => $report['report_data'],
+            'line_items' => $report['line_items'],
+        ];
+        $pdo->prepare(
+            "UPDATE swa_stewa_reports SET status='pending_contractor', contractor_baseline=?, contractor_changes='[]', updated_at=NOW() WHERE id=?"
+        )->execute([json_encode($baseline), $reportId]);
+        audit($pdo, $reportId, Auth::actorId(), 'sent_to_contractor');
+        jsonResponse(['status' => 'pending_contractor']);
+    }
+
+    if ($action === 'contractor_confirm') {
+        $user = Auth::requireRoles(['contractor']);
+        $reportId = (int)($body['report_id'] ?? 0);
+        $report = getReport($pdo, (string)$reportId);
+        if (!$report) jsonError('Not found', 404);
+        if ($report['status'] !== 'pending_contractor') {
+            jsonError('Report is not awaiting contractor confirmation');
+        }
+        $pdo->prepare("UPDATE swa_stewa_reports SET status='contractor_confirmed', updated_at=NOW() WHERE id=?")
+            ->execute([$reportId]);
+        audit($pdo, $reportId, Auth::actorId(), 'contractor_confirmed', [
+            'changes' => $report['contractor_changes'] ?? [],
+        ]);
+        jsonResponse(['status' => 'contractor_confirmed', 'report' => getReport($pdo, (string)$reportId)]);
+    }
+
     if ($action === 'submit') {
         $user = Auth::requireRoles(['engineer_1', 'engineer_2', 'contractor']);
         $reportId = (int)($body['report_id'] ?? 0);
         $report = getReport($pdo, (string)$reportId);
         if (!$report) jsonError('Not found', 404);
         assertCanEditReportType($user, (string)$report['report_type']);
+
+        if ($user['role'] === 'contractor') {
+            jsonError('Contractors must use Confirm — not Submit');
+        }
+        if ($user['role'] === 'engineer_1' && in_array($report['report_type'], ['SWA', 'STEWA'], true)) {
+            if (!in_array($report['status'], ['draft', 'contractor_confirmed', 'rejected'], true)) {
+                jsonError('Send to contractor for review, or wait for contractor confirmation before submitting to Engineer II');
+            }
+        } elseif (!in_array($report['status'], ['draft', 'rejected'], true)) {
+            jsonError('Only draft or rejected reports can be submitted');
+        }
         if ($report['report_type'] === 'IAR') {
             $report = applyIarSubmitSignatures($pdo, $user, $reportId);
         }
         $pdo->prepare("UPDATE swa_stewa_reports SET status='pending_review', updated_at=NOW() WHERE id=?")
             ->execute([$reportId]);
         audit($pdo, $reportId, Auth::actorId(), 'submitted');
+        if (in_array($report['report_type'], ['SWA', 'STEWA'], true)) {
+            syncScurveFromReports($pdo, (int)$report['project_id']);
+        }
         $report = getReport($pdo, (string)$reportId);
         try {
             $preview = generateOfficialPdf($report);
@@ -691,6 +885,9 @@ if ($method === 'POST') {
         $pdo->prepare("UPDATE swa_stewa_reports SET status='generated', pdf_file=?, qr_code=?, report_data=?, generated_at=NOW() WHERE id=?")
             ->execute([$pdfRel, $report['public_url'], json_encode($reportData), $reportId]);
         audit($pdo, $reportId, $actorId, 'pdf_generated', $files);
+        if (in_array($report['report_type'], ['SWA', 'STEWA'], true)) {
+            syncScurveFromReports($pdo, (int)$report['project_id']);
+        }
         try {
             mailFinalApprovedPackage($pdo, $reportId, $pdfRel, $extraAttachments);
         } catch (Throwable $e) {

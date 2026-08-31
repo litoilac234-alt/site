@@ -3,14 +3,32 @@ import { useAuth } from '../context/AuthContext';
 import { useSelectedProject } from '../context/SelectedProjectContext';
 import {
   createProject,
+  getProject,
+  listContractors,
   listProjects,
   updateProject,
+  type ContractorOption,
+  type ProjectAuditEntry,
   type ProjectRow,
+  type ContractHistoryEntry,
 } from '../lib/projectsApi';
 
 function dateInputValue(value: string | null | undefined): string {
   if (!value) return '';
   return value.slice(0, 10);
+}
+
+function formatMoney(n: number | null | undefined): string {
+  if (n == null) return '—';
+  return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatWhen(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 export function ProjectsPage() {
@@ -19,6 +37,9 @@ export function ProjectsPage() {
   const canManage = user?.role === 'engineer_1';
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [contractors, setContractors] = useState<ContractorOption[]>([]);
+  const [auditLog, setAuditLog] = useState<ProjectAuditEntry[]>([]);
+  const [contractHistory, setContractHistory] = useState<ContractHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +50,8 @@ export function ProjectsPage() {
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
   const [plannedEnd, setPlannedEnd] = useState('');
+  const [contractorId, setContractorId] = useState('');
+  const [contractAmount, setContractAmount] = useState('');
   const [status, setStatus] = useState('active');
 
   const resetForm = () => {
@@ -37,14 +60,19 @@ export function ProjectsPage() {
     setLocation('');
     setStartDate('');
     setPlannedEnd('');
+    setContractorId('');
+    setContractAmount('');
     setStatus('active');
+    setAuditLog([]);
+    setContractHistory([]);
   };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listProjects();
-      setProjects(res.projects);
+      const [projRes, contractorRes] = await Promise.all([listProjects(), listContractors()]);
+      setProjects(projRes.projects);
+      setContractors(contractorRes.contractors);
     } catch {
       setError('Could not load projects from database.');
     } finally {
@@ -56,7 +84,7 @@ export function ProjectsPage() {
     load();
   }, [load]);
 
-  const startRevise = (p: ProjectRow) => {
+  const startRevise = async (p: ProjectRow) => {
     setError('');
     setSuccess('');
     setEditingId(p.id);
@@ -64,7 +92,17 @@ export function ProjectsPage() {
     setLocation(p.location ?? '');
     setStartDate(dateInputValue(p.start_date));
     setPlannedEnd(dateInputValue(p.planned_end_date));
+    setContractorId(p.contractor_id != null ? String(p.contractor_id) : '');
+    setContractAmount(p.contract_amount != null ? String(p.contract_amount) : '');
     setStatus(p.status || 'active');
+    try {
+      const detail = await getProject(p.id);
+      setAuditLog(detail.audit_log);
+      setContractHistory(detail.contract_history);
+    } catch {
+      setAuditLog([]);
+      setContractHistory([]);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -84,13 +122,17 @@ export function ProjectsPage() {
         start_date: startDate || undefined,
         planned_end_date: plannedEnd || undefined,
         status: status || 'active',
+        contractor_id: contractorId ? Number(contractorId) : null,
+        contract_amount: contractAmount ? parseFloat(contractAmount) : null,
       };
 
       if (editingId !== null) {
         const res = await updateProject(editingId, input);
         setSuccess(`Project "${res.project.name}" updated.`);
         setProjectId(String(res.project.id));
-        resetForm();
+        const detail = await getProject(editingId);
+        setAuditLog(detail.audit_log);
+        setContractHistory(detail.contract_history);
       } else {
         const res = await createProject(input);
         setSuccess(
@@ -124,9 +166,8 @@ export function ProjectsPage() {
         </span>
         <h1 className="mt-3 text-2xl font-bold text-text">Projects</h1>
         <p className="mt-2 max-w-3xl text-sm text-text-muted">
-          Create a new project and assign a project title. After submitting, you can still revise
-          the project details anytime. This project becomes the basis for the schedule the
-          contractor prepares.
+          Record contractor, start date, and contract amount for each project. Changes are logged
+          with date and time. SWA/STEWA auto-fill from the latest project information.
         </p>
       </div>
 
@@ -166,7 +207,7 @@ export function ProjectsPage() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Provincial Capitol Annex"
+                placeholder="e.g. Concreting of Barangay Road"
                 className={inputCls}
                 required
               />
@@ -178,13 +219,44 @@ export function ProjectsPage() {
               <input
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="e.g. Tuguegarao City"
+                placeholder="e.g. Remebella, Buguey, Cagayan"
                 className={inputCls}
               />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-text-muted">
-                Start date
+                Contractor
+              </label>
+              <select
+                value={contractorId}
+                onChange={(e) => setContractorId(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">— Select contractor —</option>
+                {contractors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-text-muted">
+                Contract amount (₱)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={contractAmount}
+                onChange={(e) => setContractAmount(e.target.value)}
+                placeholder="5991119.01"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-text-muted">
+                Project start date
               </label>
               <input
                 type="date"
@@ -236,6 +308,49 @@ export function ProjectsPage() {
                   : 'Create project'}
             </button>
           </div>
+
+          {editingId !== null && contractHistory.length > 0 && (
+            <div className="mt-6 border-t border-border pt-5">
+              <h3 className="text-sm font-semibold text-text">Contract amount history (VO)</h3>
+              <p className="mt-1 text-xs text-text-muted">
+                Previous approved amounts are kept. New SWA/STEWA use the latest amount.
+              </p>
+              <ul className="mt-3 space-y-2 text-sm">
+                {contractHistory.map((h) => (
+                  <li key={h.id} className="rounded-lg bg-surface-muted px-3 py-2">
+                    <span className="font-medium">₱{formatMoney(h.contract_amount)}</span>
+                    <span className="text-text-muted"> · effective {h.effective_date}</span>
+                    {h.notes && <span className="text-text-muted"> · {h.notes}</span>}
+                    <span className="block text-xs text-text-muted">
+                      Recorded {formatWhen(h.created_at)}
+                      {h.created_by_name ? ` by ${h.created_by_name}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {editingId !== null && auditLog.length > 0 && (
+            <div className="mt-6 border-t border-border pt-5">
+              <h3 className="text-sm font-semibold text-text">Change history</h3>
+              <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto text-sm">
+                {auditLog.map((a) => (
+                  <li key={a.id} className="rounded-lg border border-border px-3 py-2">
+                    <span className="font-medium">{a.field_name}</span>
+                    <span className="text-text-muted">
+                      {' '}
+                      · {formatWhen(a.created_at)}
+                      {a.actor_name ? ` · ${a.actor_name}` : ''}
+                    </span>
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      {a.old_value || '—'} → {a.new_value || '—'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </form>
       )}
 
@@ -258,10 +373,19 @@ export function ProjectsPage() {
               <div>
                 <p className="font-medium text-text">{p.name}</p>
                 <p className="text-sm text-text-muted">{p.location || 'No location set'}</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {p.contractor_name ? `Contractor: ${p.contractor_name}` : 'No contractor assigned'}
+                  {p.contract_amount != null && ` · ₱${formatMoney(p.contract_amount)}`}
+                </p>
                 {(p.start_date || p.planned_end_date) && (
-                  <p className="mt-1 text-xs text-text-muted">
-                    {dateInputValue(p.start_date) || '—'} →{' '}
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    Start {dateInputValue(p.start_date) || '—'} → End{' '}
                     {dateInputValue(p.planned_end_date) || '—'}
+                  </p>
+                )}
+                {p.updated_at && (
+                  <p className="mt-0.5 text-[10px] text-text-muted">
+                    Last updated {formatWhen(p.updated_at)}
                   </p>
                 )}
               </div>

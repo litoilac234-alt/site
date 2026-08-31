@@ -80,6 +80,7 @@ class DatabaseSetup
 
         self::ensureScheduleTables($pdo);
         self::ensureIarReportType($pdo);
+        ProjectInfo::ensureTables($pdo);
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS swa_email_queue (
@@ -262,12 +263,16 @@ class DatabaseSetup
     {
         $meta = RoadProjectReference::meta();
         $pdo->prepare(
-            'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ? WHERE id = ?'
+            'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ?,
+             contractor_id = COALESCE(contractor_id, (SELECT id FROM users WHERE role = \'contractor\' LIMIT 1)),
+             contract_amount = ?
+             WHERE id = ?'
         )->execute([
             $meta['name'],
             $meta['location'],
             $meta['start_date'],
             $meta['planned_end_date'],
+            RoadProjectReference::CONTRACT_AMOUNT,
             $projectId,
         ]);
 
