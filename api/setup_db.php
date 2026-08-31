@@ -51,10 +51,14 @@ $lastError = '';
 for ($attempt = 1; $attempt <= 10; $attempt++) {
     try {
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
-        $pdo = new PDO($dsn, $user, $pass, [
+        $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::MYSQL_ATTR_CONNECT_TIMEOUT => 5,
-        ]);
+        ];
+        if (in_array(strtolower(env_val('MYSQL_SSL', '')), ['1', 'true', 'yes'], true)) {
+            $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+        }
+        $pdo = new PDO($dsn, $user, $pass, $options);
         out("Connected (attempt {$attempt}).");
         break;
     } catch (Throwable $e) {

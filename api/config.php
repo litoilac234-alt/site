@@ -26,16 +26,18 @@ function env(string $key, string $default = ''): string
     return ($value === false || $value === '') ? $default : (string)$value;
 }
 
-// Railway MySQL uses MYSQL*; local XAMPP defaults kept for easy local runs.
+// Cloud MySQL uses MYSQL*; local XAMPP defaults kept for easy local runs.
 define('DB_HOST', env('MYSQLHOST', env('DB_HOST', 'localhost')));
 define('DB_PORT', env('MYSQLPORT', env('DB_PORT', '3306')));
 define('DB_NAME', env('MYSQLDATABASE', env('DB_NAME', 'peo_monitoring')));
 define('DB_USER', env('MYSQLUSER', env('DB_USER', 'root')));
 define('DB_PASS', env('MYSQLPASSWORD', env('DB_PASS', '')));
 
-// Public app URL (no trailing slash). On Railway set APP_URL to https://your-app.up.railway.app
+// Public app URL (no trailing slash).
 $defaultAppUrl = 'http://localhost/site';
-if (env('RAILWAY_PUBLIC_DOMAIN') !== '') {
+if (env('RENDER_EXTERNAL_URL') !== '') {
+    $defaultAppUrl = env('RENDER_EXTERNAL_URL');
+} elseif (env('RAILWAY_PUBLIC_DOMAIN') !== '') {
     $defaultAppUrl = 'https://' . env('RAILWAY_PUBLIC_DOMAIN');
 }
 define('APP_URL', rtrim(env('APP_URL', $defaultAppUrl), '/'));
@@ -61,11 +63,20 @@ function db(): PDO
             DB_PORT,
             DB_NAME
         );
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ];
+        $useSsl = in_array(strtolower(env('MYSQL_SSL', '')), ['1', 'true', 'yes'], true);
+        if ($useSsl) {
+            // TiDB Serverless and other cloud MySQL providers
+            $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+        }
         $pdo = new PDO(
             $dsn,
             DB_USER,
             DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+            $options
         );
     }
     return $pdo;
