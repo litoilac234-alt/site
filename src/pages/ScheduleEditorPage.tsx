@@ -401,7 +401,7 @@ export function ScheduleEditorPage() {
                       <th className="py-2 pr-2">Duration</th>
                       <th
                         className="py-2 pr-2 text-primary"
-                        title="Optional Early Start day. Leave blank for formula. Set 1 on multiple activities to start them in parallel on Day 1."
+                        title="Optional Early Start day (0 = first day). Leave blank for formula. Set 0 on multiple activities to start in parallel."
                       >
                         Early Start (ES)
                       </th>
@@ -452,11 +452,11 @@ export function ScheduleEditorPage() {
                                 });
                               }}
                               placeholder="auto"
-                              title="Early Start day (1 = Day 1). Leave blank to use the normal ES formula."
+                              title="Early Start day (0 = first day). Leave blank to use the normal ES formula."
                               className="w-16 rounded border border-primary/40 bg-primary-light/30 px-2 py-1"
                             />
                             <span className="whitespace-nowrap text-[10px] text-text-muted">
-                              → Day {(scheduledById.get(a.id)?.es ?? a.es ?? 0) + 1}
+                              → ES {scheduledById.get(a.id)?.es ?? a.es ?? 0}
                             </span>
                           </div>
                         </td>
@@ -484,8 +484,8 @@ export function ScheduleEditorPage() {
                 <p className="mt-3 rounded-lg border border-primary/20 bg-primary-light/40 px-3 py-2 text-xs text-text-muted">
                   <strong className="text-text">Early Start (ES):</strong> blank = normal formula
                   (retain). Para magsabay ang activities (hal. Reinforcing at Buhos), ilagay ang
-                  parehong ES — <strong className="text-text">1</strong> = lahat magsisimula sa Day
-                  1, parallel sa bar chart.
+                  parehong ES — <strong className="text-text">0</strong> = lahat magsisimula sa Day
+                  0, parallel sa bar chart.
                 </p>
               </div>
 

@@ -346,9 +346,9 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
-                      <td>{a.es == null ? '—' : a.es + 1}</td>
+                      <td>{a.es == null ? '—' : a.es}</td>
                       <td>{a.ef}</td>
-                      <td>{a.ls == null ? '—' : a.ls + 1}</td>
+                      <td>{a.ls == null ? '—' : a.ls}</td>
                       <td>{a.lf}</td>
                       <td>{floatEf}</td>
                       <td>{floatEs}</td>

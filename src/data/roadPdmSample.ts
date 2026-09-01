@@ -4,10 +4,10 @@ import type { PdmActivity, PdmDependency } from '../types';
 export const REFERENCE_PDM_TITLE = 'Precedence Diagram Sample (Activities A–F)';
 
 const ACTS: { key: string; number: string; name: string; duration: number; esOverride?: number }[] = [
-  { key: 'a', number: 'A', name: 'Activity A', duration: 3, esOverride: 1 },
+  { key: 'a', number: 'A', name: 'Activity A', duration: 3, esOverride: 0 },
   { key: 'b', number: 'B', name: 'Activity B', duration: 4 },
   { key: 'c', number: 'C', name: 'Activity C', duration: 2 },
-  { key: 'd', number: 'D', name: 'Activity D', duration: 5, esOverride: 1 },
+  { key: 'd', number: 'D', name: 'Activity D', duration: 5, esOverride: 0 },
   { key: 'e', number: 'E', name: 'Activity E', duration: 2 },
   { key: 'f', number: 'F', name: 'Activity F', duration: 3 },
 ];

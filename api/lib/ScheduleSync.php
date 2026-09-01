@@ -20,8 +20,8 @@ class ScheduleSync
             $tasks[] = [
                 'index' => $i++,
                 'name' => $name,
-                'startDay' => $es + 1,
-                'endDay' => max($es + 1, $ef),
+                'startDay' => $es,
+                'endDay' => max($es, $ef),
                 'actualEndDay' => $actualEndByName[$name] ?? null,
                 'isCritical' => !empty($a['isCritical']),
             ];

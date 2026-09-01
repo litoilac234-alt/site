@@ -41,8 +41,8 @@ export function deriveBarChartFromPdm(
     id: existingTasks.find((t) => t.name === a.name)?.id ?? `derived-${a.id}`,
     index: i + 1,
     name: a.name,
-    startDay: (a.es ?? 0) + 1,
-    endDay: Math.max((a.es ?? 0) + 1, a.ef ?? a.duration),
+    startDay: a.es ?? 0,
+    endDay: Math.max(a.es ?? 0, a.ef ?? a.duration),
     actualEndDay: actualByName.get(a.name),
     isCritical: !!a.isCritical,
   }));

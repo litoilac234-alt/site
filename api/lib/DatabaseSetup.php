@@ -202,6 +202,7 @@ class DatabaseSetup
     public static function seedScheduleIfEmpty(PDO $pdo): void
     {
         self::ensureAppSettings($pdo);
+        self::migrateEsOverrideToZeroBased($pdo);
 
         if (!RoadPdmSample::hasReference()) {
             self::wipeAllSchedulesIfPresent($pdo);
@@ -226,6 +227,27 @@ class DatabaseSetup
         $pdo->exec('DELETE FROM bar_chart_tasks');
         $pdo->exec('DELETE FROM schedule_settings');
         $pdo->exec('DELETE FROM s_curve_points');
+    }
+
+    /** One-time: convert legacy 1-based es_override (1 = first day) to 0-based (0 = first day). */
+    public static function migrateEsOverrideToZeroBased(PDO $pdo): void
+    {
+        self::ensureAppSettings($pdo);
+        $done = $pdo->query(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'es_override_zero_v1'"
+        )->fetchColumn();
+        if ($done === '1') {
+            return;
+        }
+
+        $pdo->exec(
+            'UPDATE pdm_activities SET es_override = GREATEST(0, es_override - 1)
+             WHERE es_override IS NOT NULL AND es_override > 0'
+        );
+        $pdo->prepare(
+            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('es_override_zero_v1', '1')
+             ON DUPLICATE KEY UPDATE setting_value = '1'"
+        )->execute();
     }
 
     /** One-time: load reference PDM on project 1 when configured. */

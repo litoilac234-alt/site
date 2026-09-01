@@ -69,13 +69,12 @@ class PdmSchedule
                 });
             }
 
-            // Optional 1-based Early Start override (e.g. 1 = start Day 1 in parallel).
-            // When unset, keep the formula ES above.
+            // Optional 0-based Early Start override (0 = first day).
             $override = $map[$id]['esOverride'] ?? $map[$id]['es_override'] ?? null;
             if ($override !== null && $override !== '') {
                 $day = (int)$override;
-                if ($day >= 1) {
-                    $es = $day - 1;
+                if ($day >= 0) {
+                    $es = $day;
                     $map[$id]['esOverride'] = $day;
                 }
             }

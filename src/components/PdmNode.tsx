@@ -45,7 +45,7 @@ export function PdmNode({ activity, x, y, onMainCriticalPath = false }: PdmNodeP
         EF
       </text>
       <text x={w / 6} y={22} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.es == null ? '—' : activity.es + 1}
+        {activity.es == null ? '—' : activity.es}
       </text>
       <text x={w / 2} y={22} textAnchor="middle" className="fill-text text-[11px] font-bold">
         {activity.number}
@@ -78,7 +78,7 @@ export function PdmNode({ activity, x, y, onMainCriticalPath = false }: PdmNodeP
         LF
       </text>
       <text x={w / 6} y={h - 6} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.ls == null ? '—' : activity.ls + 1}
+        {activity.ls == null ? '—' : activity.ls}
       </text>
       <text x={w / 2} y={h - 6} textAnchor="middle" className="fill-text text-[10px] font-semibold">
         {activity.duration}

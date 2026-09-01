@@ -48,10 +48,9 @@ export function calculatePdmSchedule(
       );
     }
 
-    // Optional 1-based Early Start override (e.g. 1 = start Day 1 in parallel).
-    // When unset, keep the formula ES above.
-    if (act.esOverride != null && act.esOverride >= 1) {
-      act.es = act.esOverride - 1;
+    // Optional 0-based Early Start override (0 = first day, parallel start).
+    if (act.esOverride != null && act.esOverride >= 0) {
+      act.es = act.esOverride;
     }
 
     act.ef = act.es + act.duration;

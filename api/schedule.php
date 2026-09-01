@@ -23,6 +23,14 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? ($method === 'GET' ? 'get' : '');
 
+function normalizeEsOverride(mixed $value): ?int
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+    return max(0, (int)$value);
+}
+
 function loadSchedule(PDO $pdo, int $projectId): array
 {
     $acts = $pdo->prepare(
@@ -37,7 +45,7 @@ function loadSchedule(PDO $pdo, int $projectId): array
             'number' => $row['number'],
             'name' => $row['name'],
             'duration' => (int)$row['duration'],
-            'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
+            'esOverride' => normalizeEsOverride($row['es_override']),
             'posX' => (int)$row['pos_x'],
             'posY' => (int)$row['pos_y'],
         ];
@@ -228,7 +236,7 @@ if ($method === 'POST' && $action === 'save') {
             if ($esOverride === '' || $esOverride === null) {
                 $esOverride = null;
             } else {
-                $esOverride = max(1, (int)$esOverride);
+                $esOverride = max(0, (int)$esOverride);
             }
             $actStmt->execute([
                 $projectId,
@@ -273,7 +281,7 @@ if ($method === 'POST' && $action === 'save') {
                 'number' => $row['number'],
                 'name' => $row['name'],
                 'duration' => (int)$row['duration'],
-                'esOverride' => $row['es_override'] !== null ? (int)$row['es_override'] : null,
+                'esOverride' => normalizeEsOverride($row['es_override']),
             ];
         }
 
