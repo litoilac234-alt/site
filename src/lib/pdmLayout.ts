@@ -6,18 +6,34 @@ export const PDM_ROW_H = 132;
 export const PDM_ORIGIN_X = 160;
 export const PDM_ORIGIN_Y = 110;
 
+function isAfSampleNetwork(activities: PdmActivity[]): boolean {
+  return (
+    activities.length > 0 &&
+    activities.length <= 8 &&
+    activities.every((a) => /^[A-F]$/.test(a.number))
+  );
+}
+
 function isTrainingPdm(activities: PdmActivity[]): boolean {
   return (
     activities.length > 0 &&
     activities.length <= 12 &&
-    activities.every((a) => /^[A-J]$/.test(a.number))
+    activities.every((a) => /^[A-J]$/.test(a.number)) &&
+    !isAfSampleNetwork(activities)
   );
 }
 
 /**
- * Paper PDM lanes — road project or training A–J network.
+ * Paper PDM lanes — A–F sample, A–J training, or road project.
  */
 export function paperLane(activity: PdmActivity, allActivities: PdmActivity[] = []): number {
+  if (isAfSampleNetwork(allActivities)) {
+    const n = activity.number;
+    if (n === 'A' || n === 'B' || n === 'C') return 0;
+    if (n === 'D' || n === 'E' || n === 'F') return 2;
+    return 1;
+  }
+
   if (isTrainingPdm(allActivities)) {
     const n = activity.number;
     if (n === 'A') return 2;

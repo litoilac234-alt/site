@@ -5,7 +5,7 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
-import { DEPENDENCY_LABELS, getCriticalPath, freeFloatOf, totalFloatOf } from '../lib/pdm';
+import { DEPENDENCY_LABELS, getCriticalPath } from '../lib/pdm';
 import { diagramBounds, layoutPaperNetwork } from '../lib/pdmLayout';
 import { PdmNode, PDM_NODE_HALF_H, PDM_NODE_HALF_W } from '../components/PdmNode';
 import type { PdmActivity, PdmDependency } from '../types';
@@ -99,10 +99,9 @@ export function PdmPage() {
           </span>
           <h1 className="mt-3 text-2xl font-bold text-text">Precedence Diagramming Method</h1>
           <p className="mt-2 max-w-3xl text-sm text-text-muted">
-            Network diagram showing activity sequencing, dependencies (FS, SS, FF, SF), and
-            critical path. Critical when <strong>(LF − EF) = 0</strong> and{' '}
-            <strong>(LS − ES) = 0</strong> (red). Layout follows the paper network: Start on the
-            left, earthworks on one row, rebar/concrete on the row below, End on the right.
+            Network diagram showing activity sequencing and dependencies. Each node shows{' '}
+            <strong>ES / No. / EF</strong>, activity name, and <strong>LS / D / LF</strong> per the
+            precedence diagram template.
           </p>
         </div>
         {user?.role === 'contractor' && (
@@ -273,8 +272,6 @@ export function PdmPage() {
                     activity={act}
                     x={pos.x}
                     y={pos.y}
-                    freeFloat={freeFloatOf(act, activities, dependencies)}
-                    totalFloat={totalFloatOf(act)}
                     onMainCriticalPath={mainChainIds.has(act.id)}
                   />
                 );
@@ -296,17 +293,29 @@ export function PdmPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-              <h3 className="font-semibold text-text">Dependency Types</h3>
-              <ul className="mt-3 space-y-2 text-sm text-text-muted">
-                {Object.entries(DEPENDENCY_LABELS).map(([key, label]) => (
-                  <li key={key}>
-                    <strong className="text-text">{key}</strong> — {label}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                  <h3 className="font-semibold text-text">Node legend</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-text-muted">
+                    <li><strong className="text-text">D</strong> — Duration</li>
+                    <li><strong className="text-text">ES</strong> — Early Start</li>
+                    <li><strong className="text-text">EF</strong> — Early Finish</li>
+                    <li><strong className="text-text">LS</strong> — Latest Start</li>
+                    <li><strong className="text-text">LF</strong> — Latest Finish</li>
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                  <h3 className="font-semibold text-text">Dependency types</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-text-muted">
+                    {Object.entries(DEPENDENCY_LABELS).map(([key, label]) => (
+                      <li key={key}>
+                        <strong className="text-text">{key}</strong> — {label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <h3 className="font-semibold text-text">Activity Schedule Table</h3>
               <div className="mt-3 max-h-none overflow-x-auto">
@@ -316,8 +325,6 @@ export function PdmPage() {
                     <th className="py-2">No.</th>
                     <th>Activity</th>
                     <th>D</th>
-                    <th>FF</th>
-                    <th>TF</th>
                     <th>ES</th>
                     <th>EF</th>
                     <th>LS</th>
@@ -339,8 +346,6 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
-                      <td>{freeFloatOf(a, activities, dependencies)}</td>
-                      <td>{totalFloatOf(a)}</td>
                       <td>{a.es == null ? '—' : a.es + 1}</td>
                       <td>{a.ef}</td>
                       <td>{a.ls == null ? '—' : a.ls + 1}</td>

@@ -237,7 +237,7 @@ class DatabaseSetup
 
         self::ensureAppSettings($pdo);
         $done = $pdo->query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_training_v1'"
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_sample_af_v1'"
         )->fetchColumn();
         if ($done === '1') {
             return;
@@ -263,7 +263,7 @@ class DatabaseSetup
         self::loadReferenceSchedule($pdo, 1);
 
         $pdo->prepare(
-            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_training_v1', '1')
+            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_sample_af_v1', '1')
              ON DUPLICATE KEY UPDATE setting_value = '1'"
         )->execute();
     }
