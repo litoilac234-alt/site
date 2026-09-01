@@ -1,7 +1,7 @@
 import type { PdmActivity } from '../types';
 
-export const PDM_NODE_W = 120;
-export const PDM_NODE_H = 90;
+export const PDM_NODE_W = 136;
+export const PDM_NODE_H = 118;
 export const PDM_NODE_HALF_W = PDM_NODE_W / 2;
 export const PDM_NODE_HALF_H = PDM_NODE_H / 2;
 
@@ -9,66 +9,31 @@ interface PdmNodeProps {
   activity: PdmActivity;
   x: number;
   y: number;
-  /** On the main critical chain (paper style), not every zero-float parallel activity. */
+  freeFloat?: number;
+  totalFloat?: number;
   onMainCriticalPath?: boolean;
 }
 
-/** Wrap text into lines that fit within maxChars, breaking overly long words. */
-function wrapLines(text: string, maxChars: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = '';
-
-  for (const word of words) {
-    if (word.length > maxChars) {
-      if (current) {
-        lines.push(current);
-        current = '';
-      }
-      let rest = word;
-      while (rest.length > maxChars) {
-        lines.push(rest.slice(0, maxChars));
-        rest = rest.slice(maxChars);
-      }
-      current = rest;
-      continue;
-    }
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxChars) {
-      current = candidate;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-export function PdmNode({ activity, x, y, onMainCriticalPath = false }: PdmNodeProps) {
+export function PdmNode({
+  activity,
+  x,
+  y,
+  freeFloat = 0,
+  totalFloat = 0,
+  onMainCriticalPath = false,
+}: PdmNodeProps) {
   const w = PDM_NODE_W;
   const h = PDM_NODE_H;
-  const row1 = h / 3;
-  const row2 = (h * 2) / 3;
-
-  // Fit the activity name inside the node: shrink for longer names, wrap to
-  // multiple lines, and truncate with an ellipsis if it still overflows.
-  const name = activity.name ?? '';
-  const nameFontSize = name.length > 26 ? 7 : name.length > 14 ? 8 : 9;
-  const maxChars = Math.max(4, Math.floor((w - 10) / (nameFontSize * 0.56)));
-  const maxLines = nameFontSize >= 9 ? 2 : 3;
-  let nameLines = wrapLines(name, maxChars);
-  if (nameLines.length > maxLines) {
-    nameLines = nameLines.slice(0, maxLines);
-    const last = nameLines[maxLines - 1].slice(0, Math.max(1, maxChars - 1)).replace(/\s+$/, '');
-    nameLines[maxLines - 1] = `${last}…`;
-  }
-  const nameLineHeight = nameFontSize + 2;
-  const nameStartY = h / 2 - ((nameLines.length - 1) * nameLineHeight) / 2 + nameFontSize / 2 - 1;
+  const topH = 28;
+  const midH = 28;
+  const botY = topH + midH;
+  const cellH = (h - botY) / 2;
+  const col = w / 3;
+  const displayName = activity.name?.trim() || activity.number;
 
   return (
     <g transform={`translate(${x - w / 2}, ${y - h / 2})`}>
-      <title>{name}</title>
+      <title>{displayName}</title>
       <rect
         width={w}
         height={h}
@@ -77,64 +42,72 @@ export function PdmNode({ activity, x, y, onMainCriticalPath = false }: PdmNodeP
         stroke={onMainCriticalPath ? '#dc2626' : '#4a6353'}
         strokeWidth={onMainCriticalPath ? 2.75 : 1.5}
       />
-      <line x1={0} y1={row1} x2={w} y2={row1} stroke="#e0dfd8" />
-      <line x1={0} y1={row2} x2={w} y2={row2} stroke="#e0dfd8" />
-      <line x1={w / 3} y1={0} x2={w / 3} y2={row1} stroke="#e0dfd8" />
-      <line x1={(w * 2) / 3} y1={0} x2={(w * 2) / 3} y2={row1} stroke="#e0dfd8" />
-      <line x1={w / 3} y1={row2} x2={w / 3} y2={h} stroke="#e0dfd8" />
-      <line x1={(w * 2) / 3} y1={row2} x2={(w * 2) / 3} y2={h} stroke="#e0dfd8" />
 
-      {/* Top row — ES / No. / EF */}
-      <text x={w / 6} y={11} textAnchor="middle" className="fill-text-muted text-[8px]">
-        ES
-      </text>
-      <text x={w / 2} y={11} textAnchor="middle" className="fill-text-muted text-[8px]">
-        No.
-      </text>
-      <text x={(w * 5) / 6} y={11} textAnchor="middle" className="fill-text-muted text-[8px]">
-        EF
-      </text>
-      <text x={w / 6} y={24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.es == null ? '—' : activity.es + 1}
-      </text>
-      <text x={w / 2} y={24} textAnchor="middle" className="fill-text text-[11px] font-bold">
-        {activity.number}
-      </text>
-      <text x={(w * 5) / 6} y={24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.ef ?? '—'}
-      </text>
+      {/* FF / TF / DUR */}
+      <rect x={0} y={0} width={col} height={topH} fill="#5b9bd5" opacity={0.15} />
+      <rect x={col} y={0} width={col} height={topH} fill="#fff" />
+      <rect x={col * 2} y={0} width={col} height={topH} fill="#ed7d31" opacity={0.2} />
+      <line x1={0} y1={topH} x2={w} y2={topH} stroke="#e0dfd8" />
+      <line x1={col} y1={0} x2={col} y2={topH} stroke="#e0dfd8" />
+      <line x1={col * 2} y1={0} x2={col * 2} y2={topH} stroke="#e0dfd8" />
 
-      {/* Middle — activity name (wrapped / scaled to fit) */}
-      {nameLines.map((line, i) => (
-        <text
-          key={i}
-          x={w / 2}
-          y={nameStartY + i * nameLineHeight}
-          textAnchor="middle"
-          fontSize={nameFontSize}
-          className="fill-text"
-        >
-          {line}
-        </text>
-      ))}
-
-      {/* Bottom row — LS / D / LF */}
-      <text x={w / 6} y={row2 + 12} textAnchor="middle" className="fill-text-muted text-[8px]">
-        LS
+      <text x={col / 2} y={10} textAnchor="middle" className="fill-text-muted text-[7px]">
+        FF
       </text>
-      <text x={w / 2} y={row2 + 12} textAnchor="middle" className="fill-text-muted text-[8px]">
-        D
+      <text x={col * 1.5} y={10} textAnchor="middle" className="fill-text-muted text-[7px]">
+        TF
       </text>
-      <text x={(w * 5) / 6} y={row2 + 12} textAnchor="middle" className="fill-text-muted text-[8px]">
-        LF
+      <text x={col * 2.5} y={10} textAnchor="middle" className="fill-text-muted text-[7px]">
+        DUR
       </text>
-      <text x={w / 6} y={row2 + 26} textAnchor="middle" className="fill-text text-[10px] font-semibold">
-        {activity.ls == null ? '—' : activity.ls + 1}
+      <text x={col / 2} y={22} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+        {freeFloat}
       </text>
-      <text x={w / 2} y={row2 + 26} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+      <text x={col * 1.5} y={22} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+        {totalFloat}
+      </text>
+      <text x={col * 2.5} y={22} textAnchor="middle" className="fill-text text-[10px] font-semibold">
         {activity.duration}
       </text>
-      <text x={(w * 5) / 6} y={row2 + 26} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+
+      {/* Activity name */}
+      <rect x={0} y={topH} width={w} height={midH} fill="#70ad47" opacity={0.12} />
+      <line x1={0} y1={botY} x2={w} y2={botY} stroke="#e0dfd8" />
+      <text
+        x={w / 2}
+        y={topH + midH / 2 + 4}
+        textAnchor="middle"
+        className="fill-text text-[11px] font-bold"
+      >
+        {activity.number}
+      </text>
+
+      {/* ES / EF and LS / LF */}
+      <line x1={col} y1={botY} x2={col} y2={h} stroke="#e0dfd8" />
+      <text x={col / 2} y={botY + 11} textAnchor="middle" className="fill-text-muted text-[7px]">
+        ES
+      </text>
+      <text x={(col * 3) / 2} y={botY + 11} textAnchor="middle" className="fill-text-muted text-[7px]">
+        EF
+      </text>
+      <text x={col / 2} y={botY + cellH + 11} textAnchor="middle" className="fill-text-muted text-[7px]">
+        LS
+      </text>
+      <text x={(col * 3) / 2} y={botY + cellH + 11} textAnchor="middle" className="fill-text-muted text-[7px]">
+        LF
+      </text>
+      <line x1={0} y1={botY + cellH} x2={w} y2={botY + cellH} stroke="#e0dfd8" />
+
+      <text x={col / 2} y={botY + 24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+        {activity.es == null ? '—' : activity.es + 1}
+      </text>
+      <text x={(col * 3) / 2} y={botY + 24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+        {activity.ef ?? '—'}
+      </text>
+      <text x={col / 2} y={botY + cellH + 24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
+        {activity.ls == null ? '—' : activity.ls + 1}
+      </text>
+      <text x={(col * 3) / 2} y={botY + cellH + 24} textAnchor="middle" className="fill-text text-[10px] font-semibold">
         {activity.lf ?? '—'}
       </text>
     </g>

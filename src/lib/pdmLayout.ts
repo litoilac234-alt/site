@@ -6,14 +6,28 @@ export const PDM_ROW_H = 132;
 export const PDM_ORIGIN_X = 160;
 export const PDM_ORIGIN_Y = 110;
 
+function isTrainingPdm(activities: PdmActivity[]): boolean {
+  return (
+    activities.length > 0 &&
+    activities.length <= 12 &&
+    activities.every((a) => /^[A-J]$/.test(a.number))
+  );
+}
+
 /**
- * Paper PDM lanes:
- * 0 = Construction Safety (top)
- * 1 = Billboard / field office
- * 2 = Main earthworks → sub-base → unreinforced PCC
- * 3 = Rebar / structural concrete → reinforced PCC
+ * Paper PDM lanes — road project or training A–J network.
  */
-export function paperLane(activity: PdmActivity): number {
+export function paperLane(activity: PdmActivity, allActivities: PdmActivity[] = []): number {
+  if (isTrainingPdm(allActivities)) {
+    const n = activity.number;
+    if (n === 'A') return 2;
+    if (n === 'C' || n === 'G' || n === 'I') return 0;
+    if (n === 'B' || n === 'E' || n === 'F') return 1;
+    if (n === 'D' || n === 'H') return 3;
+    if (n === 'J') return 2;
+    return 2;
+  }
+
   const n = activity.number;
   const name = (activity.name ?? '').toLowerCase();
   if (name.includes('safety') || name.includes('health program')) return 0;
@@ -64,12 +78,12 @@ export function layoutPaperNetwork(
       group
         .sort(
           (a, b) =>
-            paperLane(a) - paperLane(b) ||
+            paperLane(a, activities) - paperLane(b, activities) ||
             (a.es ?? 0) - (b.es ?? 0) ||
             a.name.localeCompare(b.name),
         )
         .forEach((a) => {
-          const lane = paperLane(a);
+          const lane = paperLane(a, activities);
           const offset = usedY.get(lane) ?? 0;
           usedY.set(lane, offset + 1);
           map[a.id] = {

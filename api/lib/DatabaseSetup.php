@@ -228,12 +228,16 @@ class DatabaseSetup
         $pdo->exec('DELETE FROM s_curve_points');
     }
 
-    /** One-time: load Remebella road reference PDM + bar chart + S-curve on project 1. */
+    /** One-time: load reference PDM on project 1 when configured. */
     public static function seedRoadReferenceIfNeeded(PDO $pdo): void
     {
+        if (!RoadPdmSample::hasReference()) {
+            return;
+        }
+
         self::ensureAppSettings($pdo);
         $done = $pdo->query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'road_reference_v3'"
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_training_v1'"
         )->fetchColumn();
         if ($done === '1') {
             return;
@@ -242,7 +246,7 @@ class DatabaseSetup
         $exists = (int)$pdo->query('SELECT COUNT(*) FROM projects WHERE id = 1')->fetchColumn();
         if ($exists === 0) {
             $contractorId = (int)$pdo->query("SELECT id FROM users WHERE role = 'contractor' LIMIT 1")->fetchColumn();
-            $meta = RoadProjectReference::meta();
+            $meta = RoadPdmSample::projectMeta() ?? RoadProjectReference::meta();
             $pdo->prepare(
                 'INSERT INTO projects (id, name, contractor_id, location, start_date, planned_end_date, status) VALUES (?,?,?,?,?,?,?)'
             )->execute([
@@ -259,27 +263,43 @@ class DatabaseSetup
         self::loadReferenceSchedule($pdo, 1);
 
         $pdo->prepare(
-            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('road_reference_v3', '1')
+            "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_training_v1', '1')
              ON DUPLICATE KEY UPDATE setting_value = '1'"
         )->execute();
     }
 
     public static function loadReferenceSchedule(PDO $pdo, int $projectId): void
     {
-        $meta = RoadProjectReference::meta();
-        $pdo->prepare(
-            'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ?,
-             contractor_id = COALESCE(contractor_id, (SELECT id FROM users WHERE role = \'contractor\' LIMIT 1)),
-             contract_amount = ?
-             WHERE id = ?'
-        )->execute([
-            $meta['name'],
-            $meta['location'],
-            $meta['start_date'],
-            $meta['planned_end_date'],
-            RoadProjectReference::CONTRACT_AMOUNT,
-            $projectId,
-        ]);
+        $meta = RoadPdmSample::projectMeta() ?? RoadProjectReference::meta();
+        $contractAmount = RoadPdmSample::projectMeta() !== null
+            ? null
+            : RoadProjectReference::CONTRACT_AMOUNT;
+
+        if ($contractAmount !== null) {
+            $pdo->prepare(
+                'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ?,
+                 contractor_id = COALESCE(contractor_id, (SELECT id FROM users WHERE role = \'contractor\' LIMIT 1)),
+                 contract_amount = ?
+                 WHERE id = ?'
+            )->execute([
+                $meta['name'],
+                $meta['location'],
+                $meta['start_date'],
+                $meta['planned_end_date'],
+                $contractAmount,
+                $projectId,
+            ]);
+        } else {
+            $pdo->prepare(
+                'UPDATE projects SET name = ?, location = ?, start_date = ?, planned_end_date = ? WHERE id = ?'
+            )->execute([
+                $meta['name'],
+                $meta['location'],
+                $meta['start_date'],
+                $meta['planned_end_date'],
+                $projectId,
+            ]);
+        }
 
         $pdo->prepare('DELETE FROM pdm_dependencies WHERE project_id = ?')->execute([$projectId]);
         $pdo->prepare('DELETE FROM pdm_activities WHERE project_id = ?')->execute([$projectId]);

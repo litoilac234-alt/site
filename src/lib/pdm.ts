@@ -170,3 +170,31 @@ export const DEPENDENCY_LABELS: Record<DependencyType, string> = {
   FF: 'Finish-to-Finish',
   SF: 'Start-to-Finish',
 };
+
+export function totalFloatOf(a: PdmActivity): number {
+  if (a.ls == null || a.es == null) return 0;
+  return Math.max(0, a.ls - a.es);
+}
+
+/** Free float for FS links: earliest successor ES − this EF (lag-adjusted). */
+export function freeFloatOf(
+  a: PdmActivity,
+  activities: PdmActivity[],
+  deps: PdmDependency[],
+): number {
+  const tf = totalFloatOf(a);
+  const successors = deps.filter((d) => d.fromId === a.id);
+  if (successors.length === 0) return tf;
+
+  const ef = a.ef ?? 0;
+  let minGap = Infinity;
+  for (const d of successors) {
+    const succ = activities.find((x) => x.id === d.toId);
+    if (!succ || succ.es == null) continue;
+    const lag = d.lag ?? 0;
+    if (d.type === 'FS' || !d.type) {
+      minGap = Math.min(minGap, succ.es - ef - lag);
+    }
+  }
+  return Math.max(0, minGap === Infinity ? tf : minGap);
+}

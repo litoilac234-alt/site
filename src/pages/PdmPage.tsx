@@ -5,7 +5,7 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
-import { DEPENDENCY_LABELS, getCriticalPath } from '../lib/pdm';
+import { DEPENDENCY_LABELS, getCriticalPath, freeFloatOf, totalFloatOf } from '../lib/pdm';
 import { diagramBounds, layoutPaperNetwork } from '../lib/pdmLayout';
 import { PdmNode, PDM_NODE_HALF_H, PDM_NODE_HALF_W } from '../components/PdmNode';
 import type { PdmActivity, PdmDependency } from '../types';
@@ -273,6 +273,8 @@ export function PdmPage() {
                     activity={act}
                     x={pos.x}
                     y={pos.y}
+                    freeFloat={freeFloatOf(act, activities, dependencies)}
+                    totalFloat={totalFloatOf(act)}
                     onMainCriticalPath={mainChainIds.has(act.id)}
                   />
                 );
@@ -314,6 +316,8 @@ export function PdmPage() {
                     <th className="py-2">No.</th>
                     <th>Activity</th>
                     <th>D</th>
+                    <th>FF</th>
+                    <th>TF</th>
                     <th>ES</th>
                     <th>EF</th>
                     <th>LS</th>
@@ -335,6 +339,8 @@ export function PdmPage() {
                       <td className="py-2 font-medium">{a.number}</td>
                       <td>{a.name}</td>
                       <td>{a.duration}</td>
+                      <td>{freeFloatOf(a, activities, dependencies)}</td>
+                      <td>{totalFloatOf(a)}</td>
                       <td>{a.es == null ? '—' : a.es + 1}</td>
                       <td>{a.ef}</td>
                       <td>{a.ls == null ? '—' : a.ls + 1}</td>

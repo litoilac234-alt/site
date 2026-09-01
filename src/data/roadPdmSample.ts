@@ -1,13 +1,37 @@
 import type { PdmActivity, PdmDependency } from '../types';
 
-/** Placeholder until a new reference PDM is provided. */
-export const REFERENCE_PDM_TITLE = 'PEO Monitoring Project';
+/** PDM training reference — Activities A–J (50 calendar days). */
+export const REFERENCE_PDM_TITLE = 'PDM Training Reference (Activities A–J)';
 
-export const HAS_REFERENCE_PDM = false;
+const ACTS: { key: string; number: string; name: string; duration: number; esOverride?: number }[] = [
+  { key: 'a', number: 'A', name: 'Activity A', duration: 10, esOverride: 1 },
+  { key: 'b', number: 'B', name: 'Activity B', duration: 5 },
+  { key: 'c', number: 'C', name: 'Activity C', duration: 15 },
+  { key: 'd', number: 'D', name: 'Activity D', duration: 5 },
+  { key: 'e', number: 'E', name: 'Activity E', duration: 20 },
+  { key: 'f', number: 'F', name: 'Activity F', duration: 15 },
+  { key: 'g', number: 'G', name: 'Activity G', duration: 10 },
+  { key: 'h', number: 'H', name: 'Activity H', duration: 5 },
+  { key: 'i', number: 'I', name: 'Activity I', duration: 10 },
+  { key: 'j', number: 'J', name: 'Activity J', duration: 5 },
+];
 
-const ACTS: { key: string; number: string; name: string; duration: number; esOverride?: number }[] = [];
+const DEPS: { from: string; to: string }[] = [
+  { from: 'a', to: 'b' },
+  { from: 'a', to: 'c' },
+  { from: 'a', to: 'd' },
+  { from: 'b', to: 'e' },
+  { from: 'b', to: 'f' },
+  { from: 'c', to: 'g' },
+  { from: 'd', to: 'h' },
+  { from: 'f', to: 'i' },
+  { from: 'g', to: 'i' },
+  { from: 'e', to: 'j' },
+  { from: 'i', to: 'j' },
+  { from: 'h', to: 'j' },
+];
 
-const DEPS: { from: string; to: string; lag?: number }[] = [];
+export const HAS_REFERENCE_PDM = ACTS.length > 0;
 
 export function buildRoadPdmSample(): { activities: PdmActivity[]; dependencies: PdmDependency[] } {
   const activities: PdmActivity[] = ACTS.map((a) => ({
@@ -22,7 +46,7 @@ export function buildRoadPdmSample(): { activities: PdmActivity[]; dependencies:
     fromId: `sample-${d.from}`,
     toId: `sample-${d.to}`,
     type: 'FS',
-    lag: d.lag ?? 0,
+    lag: 0,
   }));
   return { activities, dependencies };
 }
