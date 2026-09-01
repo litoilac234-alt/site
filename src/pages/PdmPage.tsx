@@ -5,101 +5,18 @@ import { useSelectedProject } from '../context/SelectedProjectContext';
 import { ProjectSelect } from '../components/ProjectSelect';
 import { DocumentsBackLink } from '../components/DocumentsBackLink';
 import { getSchedule } from '../lib/scheduleApi';
-import { DEPENDENCY_LABELS } from '../lib/pdm';
-import { PdmNode } from '../components/PdmNode';
+import { DEPENDENCY_LABELS, getCriticalPath } from '../lib/pdm';
+import { diagramBounds, layoutPaperNetwork } from '../lib/pdmLayout';
+import { PdmNode, PDM_NODE_HALF_H, PDM_NODE_HALF_W } from '../components/PdmNode';
 import type { PdmActivity, PdmDependency } from '../types';
-
-const NODE_HALF_W = 60;
-const NODE_HALF_H = 45;
-const COL_W = 200;
-const ROW_H = 150;
-
-/**
- * Paper PDM lanes (both pages):
- * 0 = Construction Safety (top)
- * 1 = Billboard / field office
- * 2 = Main earthworks → sub-base → unreinforced PCC
- * 3 = Rebar / structural concrete → reinforced PCC
- */
-function paperLane(activity: PdmActivity): number {
-  const n = activity.number;
-  const name = (activity.name ?? '').toLowerCase();
-  if (name.includes('safety') || name.includes('health program')) return 0;
-  if (n === 'B.5' || n.startsWith('A.1')) return 1;
-  if (n.startsWith('311(2)')) return 3;
-  if (n === '404(1)b') return 3;
-  if (n === '404(1)a' && activity.duration === 1) return 2;
-  if (n.startsWith('404') && activity.duration > 1) return 3;
-  if (n.startsWith('405') && activity.duration >= 20) return 3;
-  return 2;
-}
-
-/** Columns by Early Start; rows by paper lanes so page-2 parallel paths stay separate. */
-function layoutByNetworkRank(
-  activities: PdmActivity[],
-  _dependencies: PdmDependency[],
-): Record<string, { x: number; y: number }> {
-  const groups = new Map<number, PdmActivity[]>();
-  for (const a of activities) {
-    const es = a.es ?? 0;
-    const list = groups.get(es) ?? [];
-    list.push(a);
-    groups.set(es, list);
-  }
-
-  const map: Record<string, { x: number; y: number }> = {};
-  const originX = 160;
-  const originY = 110;
-  const sortedEs = [...groups.keys()].sort((a, b) => a - b);
-
-  sortedEs.forEach((es, col) => {
-    const group = groups.get(es) ?? [];
-    const usedY = new Map<number, number>();
-    group
-      .sort((a, b) => paperLane(a) - paperLane(b) || a.number.localeCompare(b.number, undefined, { numeric: true }))
-      .forEach((a) => {
-        const lane = paperLane(a);
-        const offset = usedY.get(lane) ?? 0;
-        usedY.set(lane, offset + 1);
-        map[a.id] = {
-          x: originX + col * COL_W,
-          y: originY + lane * ROW_H + offset * 28,
-        };
-      });
-  });
-  return map;
-}
-
-function diagramBounds(positions: Record<string, { x: number; y: number }>) {
-  const pad = 72;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  Object.values(positions).forEach((p) => {
-    minX = Math.min(minX, p.x - NODE_HALF_W);
-    maxX = Math.max(maxX, p.x + NODE_HALF_W);
-    minY = Math.min(minY, p.y - NODE_HALF_H);
-    maxY = Math.max(maxY, p.y + NODE_HALF_H);
-  });
-  if (!Number.isFinite(minX)) {
-    return { x: 0, y: 0, w: 560, h: 360 };
-  }
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  };
-}
 
 function dependencyEdge(
   from: { x: number; y: number },
   to: { x: number; y: number },
 ): { d: string } {
-  const x1 = from.x + NODE_HALF_W;
+  const x1 = from.x + PDM_NODE_HALF_W;
   const y1 = from.y;
-  const x2 = to.x - NODE_HALF_W;
+  const x2 = to.x - PDM_NODE_HALF_W;
   const y2 = to.y;
   if (Math.abs(y1 - y2) < 8 && x2 > x1) {
     return { d: `M ${x1} ${y1} L ${x2} ${y2}` };
@@ -145,8 +62,13 @@ export function PdmPage() {
     };
   }, [projectId]);
 
+  const mainChainIds = useMemo(
+    () => new Set(getCriticalPath(activities, dependencies).map((a) => a.id)),
+    [activities, dependencies],
+  );
+
   const positions = useMemo(
-    () => layoutByNetworkRank(activities, dependencies),
+    () => layoutPaperNetwork(activities, dependencies),
     [activities, dependencies],
   );
 
@@ -162,7 +84,10 @@ export function PdmPage() {
 
   const criticalNumbers = criticalPath.join(' → ');
 
-  const bounds = useMemo(() => diagramBounds(positions), [positions]);
+  const bounds = useMemo(
+    () => diagramBounds(positions, PDM_NODE_HALF_W, PDM_NODE_HALF_H),
+    [positions],
+  );
 
   return (
     <main className="flex-1 overflow-y-auto p-8">
@@ -240,7 +165,7 @@ export function PdmPage() {
                 const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
                 const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
                 if (ys.length === 0 || xs.length === 0) return null;
-                const x = Math.min(...xs) - NODE_HALF_W - 28;
+                const x = Math.min(...xs) - PDM_NODE_HALF_W - 28;
                 const y1 = Math.min(...ys);
                 const y2 = Math.max(...ys);
                 return (
@@ -254,7 +179,7 @@ export function PdmPage() {
                           key={`branch-${a.id}`}
                           x1={x}
                           y1={pos.y}
-                          x2={pos.x - NODE_HALF_W}
+                          x2={pos.x - PDM_NODE_HALF_W}
                           y2={pos.y}
                           stroke="#2c2c2a"
                           strokeWidth={1.75}
@@ -278,7 +203,7 @@ export function PdmPage() {
                 const ys = group.map((a) => positions[a.id]?.y).filter((y): y is number => y != null);
                 const xs = group.map((a) => positions[a.id]?.x).filter((x): x is number => x != null);
                 if (ys.length === 0 || xs.length === 0) return null;
-                const x = Math.max(...xs) + NODE_HALF_W + 28;
+                const x = Math.max(...xs) + PDM_NODE_HALF_W + 28;
                 const y1 = Math.min(...ys);
                 const y2 = Math.max(...ys);
                 return (
@@ -290,7 +215,7 @@ export function PdmPage() {
                       return (
                         <line
                           key={`end-branch-${a.id}`}
-                          x1={pos.x + NODE_HALF_W}
+                          x1={pos.x + PDM_NODE_HALF_W}
                           y1={pos.y}
                           x2={x}
                           y2={pos.y}
@@ -316,8 +241,7 @@ export function PdmPage() {
                 const to = positions[dep.toId];
                 if (!from || !to) return null;
                 const isCritical =
-                  !!activities.find((a) => a.id === dep.fromId)?.isCritical &&
-                  !!activities.find((a) => a.id === dep.toId)?.isCritical;
+                  mainChainIds.has(dep.fromId) && mainChainIds.has(dep.toId);
                 const stroke = isCritical ? '#dc2626' : '#9ca89f';
                 const edge = dependencyEdge(from, to);
                 return (
@@ -335,7 +259,15 @@ export function PdmPage() {
               {activities.map((act) => {
                 const pos = positions[act.id];
                 if (!pos) return null;
-                return <PdmNode key={act.id} activity={act} x={pos.x} y={pos.y} />;
+                return (
+                  <PdmNode
+                    key={act.id}
+                    activity={act}
+                    x={pos.x}
+                    y={pos.y}
+                    onMainCriticalPath={mainChainIds.has(act.id)}
+                  />
+                );
               })}
             </svg>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-text-muted">

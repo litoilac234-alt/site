@@ -1,9 +1,16 @@
 import type { PdmActivity } from '../types';
 
+export const PDM_NODE_W = 120;
+export const PDM_NODE_H = 90;
+export const PDM_NODE_HALF_W = PDM_NODE_W / 2;
+export const PDM_NODE_HALF_H = PDM_NODE_H / 2;
+
 interface PdmNodeProps {
   activity: PdmActivity;
   x: number;
   y: number;
+  /** On the main critical chain (paper style), not every zero-float parallel activity. */
+  onMainCriticalPath?: boolean;
 }
 
 /** Wrap text into lines that fit within maxChars, breaking overly long words. */
@@ -38,10 +45,9 @@ function wrapLines(text: string, maxChars: number): string[] {
   return lines;
 }
 
-export function PdmNode({ activity, x, y }: PdmNodeProps) {
-  const w = 120;
-  const h = 90;
-  const critical = activity.isCritical;
+export function PdmNode({ activity, x, y, onMainCriticalPath = false }: PdmNodeProps) {
+  const w = PDM_NODE_W;
+  const h = PDM_NODE_H;
   const row1 = h / 3;
   const row2 = (h * 2) / 3;
 
@@ -67,9 +73,9 @@ export function PdmNode({ activity, x, y }: PdmNodeProps) {
         width={w}
         height={h}
         rx={4}
-        fill={critical ? '#fef2f2' : '#fff'}
-        stroke={critical ? '#dc2626' : '#4a6353'}
-        strokeWidth={critical ? 2.75 : 1.5}
+        fill={onMainCriticalPath ? '#fef2f2' : '#fff'}
+        stroke={onMainCriticalPath ? '#dc2626' : '#4a6353'}
+        strokeWidth={onMainCriticalPath ? 2.75 : 1.5}
       />
       <line x1={0} y1={row1} x2={w} y2={row1} stroke="#e0dfd8" />
       <line x1={0} y1={row2} x2={w} y2={row2} stroke="#e0dfd8" />

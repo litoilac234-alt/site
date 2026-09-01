@@ -96,7 +96,7 @@ export function calculatePdmSchedule(
   return [...map.values()];
 }
 
-function topologicalSort(
+export function topologicalSort(
   activities: PdmActivity[],
   dependencies: PdmDependency[],
 ): string[] | null {
