@@ -203,23 +203,32 @@ class DatabaseSetup
     {
         self::ensureAppSettings($pdo);
 
-        // One-time wipe of legacy auto-seeded PDM so schedules can be rebuilt from a new reference.
+        // One-time wipe of all legacy PDM — awaiting new reference from user.
         $reset = $pdo->query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_reset_v2'"
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_reset_v4'"
         )->fetchColumn();
         if ($reset !== '1') {
             $pdo->exec('DELETE FROM pdm_dependencies');
             $pdo->exec('DELETE FROM pdm_activities');
             $pdo->exec('DELETE FROM bar_chart_tasks');
             $pdo->exec('DELETE FROM schedule_settings');
+            $pdo->exec('DELETE FROM s_curve_points');
+            $pdo->exec(
+                "DELETE FROM app_settings WHERE setting_key IN (
+                    'road_reference_v1', 'road_reference_v2', 'road_reference_v3'
+                )"
+            );
             $pdo->prepare(
-                "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_reset_v2', '1')
+                "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_reset_v4', '1')
                  ON DUPLICATE KEY UPDATE setting_value = '1'"
             )->execute();
             return;
         }
 
-        // No demo PDM — contractor enters activities from the official reference.
+        if (!RoadPdmSample::hasReference()) {
+            return;
+        }
+
         self::seedRoadReferenceIfNeeded($pdo);
     }
 
@@ -297,6 +306,10 @@ class DatabaseSetup
 
     public static function insertRoadPdm(PDO $pdo, int $projectId): void
     {
+        if (!RoadPdmSample::hasReference()) {
+            return;
+        }
+
         $ids = [];
         $stmt = $pdo->prepare(
             'INSERT INTO pdm_activities (project_id, activity_number, activity_name, duration, es_override, pos_x, pos_y)

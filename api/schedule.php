@@ -344,6 +344,9 @@ if ($method === 'POST' && $action === 'save') {
 
 if ($method === 'POST' && $action === 'load-reference') {
     Auth::requireRoles(['contractor']);
+    if (!\Peo\RoadPdmSample::hasReference()) {
+        jsonError('Reference PDM not configured yet. Send the new schedule to be loaded.', 400);
+    }
     $body = readJsonBody();
     $projectId = (int)($body['project_id'] ?? 0);
     if (!$projectId) {

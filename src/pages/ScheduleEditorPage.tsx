@@ -8,7 +8,7 @@ import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import { getSchedule, saveSchedule, clearSchedule, loadReferenceSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
 import { applyPdmDerivatives } from '../lib/scheduleSync';
-import { REFERENCE_PDM_TITLE } from '../data/roadPdmSample';
+import { REFERENCE_PDM_TITLE, HAS_REFERENCE_PDM } from '../data/roadPdmSample';
 import type { DependencyType, PdmActivity } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -238,7 +238,7 @@ export function ScheduleEditorPage() {
                     onClick={() => {
                       if (
                         !window.confirm(
-                          'Load the Remebella, Buguey reference (PDM, bar chart, S-curve, BOQ)? This replaces the current schedule.',
+                          'Load the reference PDM (activities, dependencies, bar chart, S-curve)? This replaces the current schedule.',
                         )
                       ) {
                         return;
@@ -251,14 +251,23 @@ export function ScheduleEditorPage() {
                             applyPdmDerivatives(await loadReferenceSchedule(Number(projectId))),
                           );
                           setSuccess(`Reference loaded: ${REFERENCE_PDM_TITLE}`);
-                        } catch {
-                          setError('Could not load reference schedule.');
+                        } catch (e) {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : 'Could not load reference schedule.',
+                          );
                         } finally {
                           setSaving(false);
                         }
                       })();
                     }}
-                    disabled={saving}
+                    disabled={saving || !HAS_REFERENCE_PDM}
+                    title={
+                      HAS_REFERENCE_PDM
+                        ? undefined
+                        : 'No reference PDM yet — waiting for new schedule data'
+                    }
                     className="rounded-lg border border-primary/40 bg-primary-light/50 px-3 py-1.5 text-xs font-medium text-primary disabled:opacity-50"
                   >
                     Load reference PDM
