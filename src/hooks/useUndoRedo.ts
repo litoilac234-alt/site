@@ -3,11 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const MAX_HISTORY = 50;
 
 function clone<T>(value: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function sameSnapshot<T>(a: T, b: T): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return a === b;
 }
 
 export function useUndoRedo<T>(initial: T) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSelectedProject } from '../context/SelectedProjectContext';
@@ -7,9 +7,9 @@ import { UndoRedoToolbar } from '../components/ui/UndoRedoToolbar';
 import { useUndoRedo, useUndoRedoKeyboard } from '../hooks/useUndoRedo';
 import { getSchedule, saveSchedule, clearSchedule, loadReferenceSchedule, type ProjectSchedule } from '../lib/scheduleApi';
 import { listProjects } from '../lib/projectsApi';
-import { applyPdmDerivatives } from '../lib/scheduleSync';
+import { applyPdmDerivatives, deriveBarChartFromPdm } from '../lib/scheduleSync';
 import { REFERENCE_PDM_TITLE, HAS_REFERENCE_PDM } from '../data/roadPdmSample';
-import type { DependencyType, PdmActivity } from '../types';
+import type { DependencyType, PdmActivity, PdmDependency } from '../types';
 
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
 
@@ -17,6 +17,67 @@ function newActivity(i: number): PdmActivity {
   const letter = String.fromCharCode(65 + (i % 26));
   return { id: `new-${Date.now()}-${i}`, number: letter, name: `Activity ${letter}`, duration: 3 };
 }
+
+const DependencyRow = memo(function DependencyRow({
+  dep,
+  activities,
+  onPatch,
+  onRemove,
+}: {
+  dep: PdmDependency;
+  activities: PdmActivity[];
+  onPatch: (depId: string, patch: Partial<PdmDependency>) => void;
+  onRemove: (depId: string) => void;
+}) {
+  return (
+    <tr className="border-b border-border/50">
+      <td className="py-2 pr-2">
+        <select
+          value={dep.fromId}
+          onChange={(e) => onPatch(dep.id, { fromId: e.target.value })}
+          className="rounded border border-border px-2 py-1"
+        >
+          {activities.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.number} — {a.name}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="py-2 pr-2">
+        <select
+          value={dep.toId}
+          onChange={(e) => onPatch(dep.id, { toId: e.target.value })}
+          className="rounded border border-border px-2 py-1"
+        >
+          {activities.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.number} — {a.name}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="py-2 pr-2">
+        <select
+          value={dep.type}
+          onChange={(e) => onPatch(dep.id, { type: e.target.value as DependencyType })}
+          className="rounded border border-border px-2 py-1"
+        >
+          {DEP_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="py-2 text-right">
+        <button type="button" onClick={() => onRemove(dep.id)} className="text-xs text-red-600">
+          Remove
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export function ScheduleEditorPage() {
   const { user } = useAuth();
@@ -41,10 +102,21 @@ export function ScheduleEditorPage() {
 
   const patchSchedule = useCallback(
     (updater: (schedule: ProjectSchedule) => ProjectSchedule) => {
-      setData((d) => (d ? applyPdmDerivatives(updater(d)) : d));
+      setData((d) => (d ? updater(d) : d));
     },
     [setData],
   );
+
+  const derived = useMemo(() => {
+    if (!data) return null;
+    return deriveBarChartFromPdm(data.activities, data.dependencies, data.barChartTasks);
+  }, [data]);
+
+  const scheduledById = useMemo(() => {
+    const map = new Map<string, PdmActivity>();
+    derived?.activities.forEach((a) => map.set(a.id, a));
+    return map;
+  }, [derived]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +152,26 @@ export function ScheduleEditorPage() {
     if (hasProjects === false) return;
     load();
   }, [load, hasProjects]);
+
+  const updateDependency = useCallback(
+    (depId: string, patch: Partial<PdmDependency>) => {
+      patchSchedule((d) => ({
+        ...d,
+        dependencies: d.dependencies.map((x) => (x.id === depId ? { ...x, ...patch } : x)),
+      }));
+    },
+    [patchSchedule],
+  );
+
+  const removeDependency = useCallback(
+    (depId: string) => {
+      patchSchedule((d) => ({
+        ...d,
+        dependencies: d.dependencies.filter((x) => x.id !== depId),
+      }));
+    },
+    [patchSchedule],
+  );
 
   const handleSave = async () => {
     if (!data) return;
@@ -364,7 +456,7 @@ export function ScheduleEditorPage() {
                               className="w-16 rounded border border-primary/40 bg-primary-light/30 px-2 py-1"
                             />
                             <span className="whitespace-nowrap text-[10px] text-text-muted">
-                              → Day {(a.es ?? 0) + 1}
+                              → Day {(scheduledById.get(a.id)?.es ?? a.es ?? 0) + 1}
                             </span>
                           </div>
                         </td>
@@ -405,15 +497,21 @@ export function ScheduleEditorPage() {
                     onClick={() => {
                       const acts = data.activities;
                       if (acts.length < 2) return;
+                      const fromId = acts[0].id;
+                      const toId = acts[1].id;
+                      const duplicate = data.dependencies.some(
+                        (d) => d.fromId === fromId && d.toId === toId && d.type === 'FS',
+                      );
+                      if (duplicate) return;
                       patchSchedule((d) => ({
                         ...d,
                         dependencies: [
                           ...d.dependencies,
                           {
                             id: `new-d-${Date.now()}`,
-                            fromId: acts[0].id,
-                            toId: acts[1].id,
-                            type: 'FS',
+                            fromId,
+                            toId,
+                            type: 'FS' as const,
                           },
                         ],
                       }));
@@ -434,88 +532,22 @@ export function ScheduleEditorPage() {
                   </thead>
                   <tbody>
                     {data.dependencies.map((d) => (
-                      <tr key={d.id} className="border-b border-border/50">
-                        <td className="py-2 pr-2">
-                          <select
-                            value={d.fromId}
-                            onChange={(e) =>
-                              patchSchedule((prev) => ({
-                                ...prev,
-                                dependencies: prev.dependencies.map((x) =>
-                                  x.id === d.id ? { ...x, fromId: e.target.value } : x,
-                                ),
-                              }))
-                            }
-                            className="rounded border border-border px-2 py-1"
-                          >
-                            {data.activities.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.number} — {a.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 pr-2">
-                          <select
-                            value={d.toId}
-                            onChange={(e) =>
-                              patchSchedule((prev) => ({
-                                ...prev,
-                                dependencies: prev.dependencies.map((x) =>
-                                  x.id === d.id ? { ...x, toId: e.target.value } : x,
-                                ),
-                              }))
-                            }
-                            className="rounded border border-border px-2 py-1"
-                          >
-                            {data.activities.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.number} — {a.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 pr-2">
-                          <select
-                            value={d.type}
-                            onChange={(e) =>
-                              patchSchedule((prev) => ({
-                                ...prev,
-                                dependencies: prev.dependencies.map((x) =>
-                                  x.id === d.id ? { ...x, type: e.target.value as DependencyType } : x,
-                                ),
-                              }))
-                            }
-                            className="rounded border border-border px-2 py-1"
-                          >
-                            {DEP_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              patchSchedule((prev) => ({
-                                ...prev,
-                                dependencies: prev.dependencies.filter((x) => x.id !== d.id),
-                              }))
-                            }
-                            className="text-xs text-red-600"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
+                      <DependencyRow
+                        key={d.id}
+                        dep={d}
+                        activities={data.activities}
+                        onPatch={updateDependency}
+                        onRemove={removeDependency}
+                      />
                     ))}
                   </tbody>
                 </table>
                 <p className="mt-3 text-sm text-text-muted">
-                  Critical path: <strong>{data.criticalPath.join(' → ') || '—'}</strong> · Project duration:{' '}
-                  <strong>{data.projectDuration} days</strong>
+                  Critical path: <strong>{derived?.criticalPath.join(' → ') || '—'}</strong> · Project duration:{' '}
+                  <strong>{derived?.projectDuration ?? 0} days</strong>
+                  {derived?.pdmError ? (
+                    <span className="ml-2 text-red-600">({derived.pdmError})</span>
+                  ) : null}
                 </p>
               </div>
             </div>
@@ -533,7 +565,7 @@ export function ScheduleEditorPage() {
                   <input
                     type="number"
                     readOnly
-                    value={data.barChartTotalDays}
+                    value={derived?.projectDuration ?? data.barChartTotalDays}
                     className="ml-2 w-20 rounded border border-border bg-surface-muted px-2 py-1"
                   />
                 </label>
@@ -561,7 +593,7 @@ export function ScheduleEditorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.barChartTasks.map((t) => (
+                  {derived?.barChartTasks.map((t) => (
                     <tr key={t.id} className="border-b border-border/50">
                       <td className="py-2 pr-2">{t.index}</td>
                       <td className="py-2 pr-2">{t.name}</td>
