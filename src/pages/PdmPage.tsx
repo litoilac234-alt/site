@@ -124,6 +124,14 @@ export function PdmPage() {
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading ? (
         <p className="text-sm text-text-muted">Loading schedule…</p>
+      ) : activities.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center shadow-sm">
+          <p className="text-lg font-semibold text-text">No PDM schedule yet</p>
+          <p className="mt-2 text-sm text-text-muted">
+            All activities and dependencies were cleared. Send the new reference schedule to be loaded,
+            or use <strong>Prepare Construction Schedule</strong> to enter activities manually.
+          </p>
+        </div>
       ) : (
         <>
           <div className="mb-4 grid gap-4 sm:grid-cols-3">

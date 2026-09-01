@@ -203,33 +203,29 @@ class DatabaseSetup
     {
         self::ensureAppSettings($pdo);
 
-        // One-time wipe of all legacy PDM — awaiting new reference from user.
-        $reset = $pdo->query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'pdm_reset_v4'"
-        )->fetchColumn();
-        if ($reset !== '1') {
-            $pdo->exec('DELETE FROM pdm_dependencies');
-            $pdo->exec('DELETE FROM pdm_activities');
-            $pdo->exec('DELETE FROM bar_chart_tasks');
-            $pdo->exec('DELETE FROM schedule_settings');
-            $pdo->exec('DELETE FROM s_curve_points');
-            $pdo->exec(
-                "DELETE FROM app_settings WHERE setting_key IN (
-                    'road_reference_v1', 'road_reference_v2', 'road_reference_v3'
-                )"
-            );
-            $pdo->prepare(
-                "INSERT INTO app_settings (setting_key, setting_value) VALUES ('pdm_reset_v4', '1')
-                 ON DUPLICATE KEY UPDATE setting_value = '1'"
-            )->execute();
-            return;
-        }
-
         if (!RoadPdmSample::hasReference()) {
+            self::wipeAllSchedulesIfPresent($pdo);
             return;
         }
 
         self::seedRoadReferenceIfNeeded($pdo);
+    }
+
+    /** Remove every PDM / bar chart / S-curve row while no reference is configured. */
+    public static function wipeAllSchedulesIfPresent(PDO $pdo): void
+    {
+        $acts = (int)$pdo->query('SELECT COUNT(*) FROM pdm_activities')->fetchColumn();
+        $deps = (int)$pdo->query('SELECT COUNT(*) FROM pdm_dependencies')->fetchColumn();
+        $tasks = (int)$pdo->query('SELECT COUNT(*) FROM bar_chart_tasks')->fetchColumn();
+        if ($acts === 0 && $deps === 0 && $tasks === 0) {
+            return;
+        }
+
+        $pdo->exec('DELETE FROM pdm_dependencies');
+        $pdo->exec('DELETE FROM pdm_activities');
+        $pdo->exec('DELETE FROM bar_chart_tasks');
+        $pdo->exec('DELETE FROM schedule_settings');
+        $pdo->exec('DELETE FROM s_curve_points');
     }
 
     /** One-time: load Remebella road reference PDM + bar chart + S-curve on project 1. */
