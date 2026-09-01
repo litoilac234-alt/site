@@ -6,6 +6,8 @@ declare(strict_types=1);
  * Safe to run on every boot — skips if users table exists.
  */
 
+require_once __DIR__ . '/lib/MysqlPdo.php';
+
 $isCli = PHP_SAPI === 'cli';
 
 if (!$isCli) {
@@ -39,7 +41,8 @@ $name = env_val('MYSQLDATABASE', env_val('DB_NAME', ''));
 $user = env_val('MYSQLUSER', env_val('DB_USER', ''));
 $pass = env_val('MYSQLPASSWORD', env_val('DB_PASS', ''));
 
-out("DB setup: host={$host} db={$name} user={$user}");
+$sslOn = mysql_ssl_enabled($host, env_val('MYSQL_SSL', ''));
+out("DB setup: host={$host} db={$name} user={$user} ssl=" . ($sslOn ? 'on' : 'off'));
 
 if ($host === '' || $name === '' || $user === '') {
     out('SKIP: MySQL env vars missing.');
@@ -51,12 +54,7 @@ $lastError = '';
 for ($attempt = 1; $attempt <= 10; $attempt++) {
     try {
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
-        $options = [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        ];
-        if (in_array(strtolower(env_val('MYSQL_SSL', '')), ['1', 'true', 'yes'], true)) {
-            $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
-        }
+        $options = mysql_pdo_options($host, env_val('MYSQL_SSL', ''));
         $pdo = new PDO($dsn, $user, $pass, $options);
         out("Connected (attempt {$attempt}).");
         break;

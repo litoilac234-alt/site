@@ -53,6 +53,8 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
 }
 
+require_once __DIR__ . '/lib/MysqlPdo.php';
+
 function db(): PDO
 {
     static $pdo = null;
@@ -63,15 +65,9 @@ function db(): PDO
             DB_PORT,
             DB_NAME
         );
-        $options = [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        $options = mysql_pdo_options(DB_HOST, env('MYSQL_SSL', ''), [
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ];
-        $useSsl = in_array(strtolower(env('MYSQL_SSL', '')), ['1', 'true', 'yes'], true);
-        if ($useSsl) {
-            // TiDB Serverless and other cloud MySQL providers
-            $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
-        }
+        ]);
         $pdo = new PDO(
             $dsn,
             DB_USER,

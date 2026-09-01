@@ -27,6 +27,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 FROM php:8.2-cli-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
